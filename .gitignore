@@ -1,0 +1,23 @@
+.DS_Store
+.claude/
+
+# Local credentials — never commit. Whitelist the .example template only.
+.env
+.env.*
+!.env.*.example
+
+# Packer
+packer_cache/
+*.box
+crash.log
+crash.*.log
+
+# Build artifacts
+output-*/
+*.tart
+
+# Downloaded installer media — large, redistributable only sometimes (Windows
+# ARM64 VHDX from Microsoft is bring-your-own; Ubuntu ISO is fine to re-fetch).
+*.iso
+*.vhdx
+*.vhd

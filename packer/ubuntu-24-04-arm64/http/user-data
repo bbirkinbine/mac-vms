@@ -1,0 +1,70 @@
+#cloud-config
+# =============================================================================
+# Ubuntu Server 24.04 LTS ARM64 autoinstall — mac-vms ubuntu base
+#
+# Fetched by subiquity on first boot of the live ISO via the kernel cmdline
+# 'ds=nocloud-net;s=http://<packer-http>/'. Drives an unattended install.
+# Hardening / package install happens in the shell provisioners after
+# autoinstall — keep this file boring.
+#
+# Lifted from sibling homelab repo's packer/ubuntu-24-04-base/http/user-data.
+# Only the apt arches list differs (arm64 instead of amd64).
+# =============================================================================
+autoinstall:
+  version: 1
+
+  # Don't burn 5+ minutes downloading a fresher subiquity before installing.
+  refresh-installer:
+    update: false
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # Stock ARM64 archive mirror. Roles can override later.
+  apt:
+    geoip: true
+    preserve_sources_list: false
+    primary:
+      - arches: [arm64]
+        uri: http://ports.ubuntu.com/ubuntu-ports
+
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  # Minimal package set. The provisioners install the rest. NOTHING role-
+  # specific belongs here.
+  packages:
+    - openssh-server
+    - qemu-guest-agent
+    - cloud-init
+    - sudo
+    - curl
+    - ca-certificates
+
+  # Single disk, ext4, no LVM. Keeps the image simple to clone and grow.
+  storage:
+    layout:
+      name: direct
+
+  # Build user. Password hash MUST match var.build_password in HCL
+  # (default plaintext: 'packer-build-only'). Regenerate with:
+  #   python3 -c "import crypt; print(crypt.crypt('NEWPASS', crypt.mksalt(crypt.METHOD_SHA512)))"
+  identity:
+    realname: "Packer Build"
+    username: packer
+    hostname: ubuntu-24-04-arm64-base
+    password: "$6$7Vsze83plLs56vXc$Y54sTTR6VlyAwIBeC531n25wOQwyIUIP8EiZO9GL0LXI6c7zn79BmE4jirkAX5RyfkhkiQgNrNHd8YI14IRp.1"
+
+  user-data:
+    disable_root: true
+    timezone: Etc/UTC
+
+  # Run as the last installer steps, before reboot. /target is the chroot
+  # of the about-to-boot system.
+  late-commands:
+    # Passwordless sudo for the build user — Packer provisioners need this.
+    # Removed in cleanup at end of build.
+    - echo 'packer ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/99-packer-build
+    - chmod 0440 /target/etc/sudoers.d/99-packer-build

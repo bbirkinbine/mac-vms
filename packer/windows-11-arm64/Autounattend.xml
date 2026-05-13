@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Autounattend.xml — Windows 11 ARM64 unattended install / OOBE bypass.
+
+  STUB. Needs to be written fresh for ARM64; the homelab x86 file is not
+  reusable (different image architecture key, different driver injection
+  paths, different partition table for the ARM64 firmware layout).
+
+  The next session should:
+    1. Decide whether this file is consumed by an ISO install or by
+       injecting into the Microsoft VHDX as Panther\unattend.xml before
+       boot. The two paths use the same schema but different placement.
+    2. Set the ProcessorArchitecture to "arm64" on every Component element
+       (NOT "amd64" — that's the homelab default and won't match).
+    3. Define an OOBE bypass + build user that matches
+       var.build_username / var.build_password in variables.pkr.hcl
+       (defaults: packer / packer-build-only-Win11!).
+    4. Enable WinRM in the FirstLogonCommands so Packer's winrm
+       communicator can connect.
+
+  Validate with: xmllint (no-out) Autounattend.xml
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- TODO(next-session): scaffold the four passes (windowsPE, generalize,
+       specialize, oobeSystem) for ARM64. -->
+
+</unattend>
