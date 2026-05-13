@@ -13,17 +13,21 @@ default:
 build-ubuntu:
     @./scripts/build-ubuntu.sh
 
-# Build the Windows 11 ARM64 base image. Requires the Insider VHDX present
-# at the path configured in .env.local — see packer/windows-11-arm64/README.md.
+# Build the Windows 11 ARM64 base image via QEMU + swtpm (Tart doesn't
+# expose TPM/Secure Boot). Requires the Win11 ARM64 ISO path set in
+# .env.local — see packer/windows-11-arm64/README.md for the download.
 build-windows:
     @./scripts/build-windows.sh
 
 # --- validation --------------------------------------------------------------
 
-# `packer fmt -check` + `packer validate` across every Packer dir.
+# `packer fmt -check` + `packer validate` across every Packer dir. The
+# Windows source's required variables (iso_path, swtpm_socket_path) don't
+# have defaults; feed validate dummy values so the HCL parses without us
+# needing a real ISO present.
 validate:
-    cd packer/ubuntu-24-04-arm64 && packer init . && packer fmt -check . && packer validate .
-    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && packer validate .
+    cd packer/ubuntu-24-04-arm64 && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso packer validate .
+    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso PKR_VAR_qemu_binary=/usr/bin/true packer validate .
 
 # `packer fmt -recursive` to fix formatting drift.
 fmt:

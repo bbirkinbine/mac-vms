@@ -4,16 +4,13 @@
 # (which sources ../../.env.local). Defaults are sensible for an M-series
 # MacBook with 64+ GB of RAM.
 
-variable "iso_url" {
+// The tart-cli builder's from_iso only accepts an *absolute local path*, not
+// an HTTPS URL. The build wrapper (scripts/build-ubuntu.sh) handles the
+// download + SHA256 verification, caches into ./packer_cache/iso/, then
+// exports PKR_VAR_iso_path. You don't usually override this directly.
+variable "iso_path" {
   type        = string
-  description = "URL of the Ubuntu Server 24.04 ARM64 live ISO."
-  default     = "https://releases.ubuntu.com/24.04/ubuntu-24.04.1-live-server-arm64.iso"
-}
-
-variable "iso_checksum" {
-  type        = string
-  description = "Checksum of the Ubuntu ISO, e.g. 'sha256:abcd...'. Use 'file:URL' to fetch SHA256SUMS automatically."
-  default     = "file:https://releases.ubuntu.com/24.04/SHA256SUMS"
+  description = "Absolute local path to the Ubuntu 24.04 ARM64 live-server ISO. Provided by the build wrapper."
 }
 
 variable "vm_name" {

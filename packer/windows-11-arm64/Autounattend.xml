@@ -1,28 +1,300 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Autounattend.xml — Windows 11 ARM64 unattended install / OOBE bypass.
+  Autounattend.xml — Windows 11 ARM64 unattended install for Tart + Packer.
 
-  STUB. Needs to be written fresh for ARM64; the homelab x86 file is not
-  reusable (different image architecture key, different driver injection
-  paths, different partition table for the ARM64 firmware layout).
+  Delivered to Setup as a second attached ISO built by scripts/build-windows.sh
+  (the wrapper repacks {http/Autounattend.xml} into a tiny CIDATA-style ISO and
+  hands its path to Packer via PKR_VAR_unattend_iso_path; the source attaches
+  both the Windows install ISO and this unattend ISO via `from_iso`). Windows
+  Setup probes attached removable media for `Autounattend.xml` at the root
+  and applies it before the language picker.
 
-  The next session should:
-    1. Decide whether this file is consumed by an ISO install or by
-       injecting into the Microsoft VHDX as Panther\unattend.xml before
-       boot. The two paths use the same schema but different placement.
-    2. Set the ProcessorArchitecture to "arm64" on every Component element
-       (NOT "amd64" — that's the homelab default and won't match).
-    3. Define an OOBE bypass + build user that matches
-       var.build_username / var.build_password in variables.pkr.hcl
-       (defaults: packer / packer-build-only-Win11!).
-    4. Enable WinRM in the FirstLogonCommands so Packer's winrm
-       communicator can connect.
+  Schema is identical to x86 but every component carries
+  processorArchitecture="arm64". The homelab x86 file
+  (homelab/packer/windows-11-base/http/Autounattend.xml) is the reference,
+  but several sections are deliberately not copied — see CLAUDE.md
+  "What NOT to lift from homelab".
 
-  Validate with: xmllint (no-out) Autounattend.xml
+  Build-time AdministratorPassword and FirstLogonCommands.WinRM-bootstrap
+  must stay in sync with variables.pkr.hcl/var.build_password. If you change
+  one, change the other.
+
+  References:
+    - Microsoft answer file reference:
+      https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/
+    - Homelab x86 sibling (for FirstLogonCommands recipe):
+      ~/Downloads/src/homelab/packer/windows-11-base/http/Autounattend.xml
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
 
-  <!-- TODO(next-session): scaffold the four passes (windowsPE, generalize,
-       specialize, oobeSystem) for ARM64. -->
+  <!-- =========================================================================
+       windowsPE pass: locale, storage / partitioning, image selection.
 
+       Note on driver injection: Win11 ARM's WinPE doesn't ship usable
+       drivers for QEMU's emulated storage controllers (virtio-blk, NVMe,
+       AHCI all failed in testing — same as the homelab x86 build's
+       discovery, only no in-box AHCI fallback exists for ARM either).
+       The Microsoft-Windows-PnpCustomizationsWinPE block below pre-loads
+       Microsoft-signed virtio drivers from virtio-win.iso (attached as
+       the third CD by scripts/qemu-with-tpm.sh when VIRTIO_WIN_ISO_PATH
+       is set). Drive letter assignment: D: install ISO, E: unattend ISO,
+       F: virtio-win.iso under our boot order.
+       ========================================================================= -->
+  <settings pass="windowsPE">
+
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <DriverPaths>
+        <!-- viostor: virtio-blk driver. Without this, WinPE can't see
+             the boot disk (Packer's default disk_interface is virtio).
+             Path uses w11 (Windows 11) and ARM64; if your virtio-win.iso
+             organizes them differently, update accordingly. -->
+        <PathAndCredentials wcm:action="add" wcm:keyValue="viostor">
+          <Path>F:\viostor\w11\ARM64</Path>
+        </PathAndCredentials>
+        <!-- NetKVM: virtio-net driver. Without this, the FirstLogonCommands
+             step that waits for the NIC sits there forever and WinRM
+             never comes up. -->
+        <PathAndCredentials wcm:action="add" wcm:keyValue="NetKVM">
+          <Path>F:\NetKVM\w11\ARM64</Path>
+        </PathAndCredentials>
+      </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+      <!-- Pure-UEFI disk layout for ARM64: ESP + MSR + Windows. The 300MB
+           ESP is generous (Microsoft minimum is 100MB) so future feature
+           updates that bloat the recovery partition have headroom. -->
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>300</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>16</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+              <Label>System</Label>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <!-- Multi-edition ISO: pick Pro by image name. If 24H2 ARM64 uses a
+           different SKU label (e.g. "Windows 11 Pro for ARM"), the install
+           halts with "the image you have selected is not for this type of
+           computer" — re-check with `dism /Get-WimInfo` and update. -->
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+          <InstallFrom>
+            <MetaData wcm:action="add">
+              <Key>/IMAGE/NAME</Key>
+              <Value>Windows 11 Pro</Value>
+            </MetaData>
+          </InstallFrom>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>mac-vms-build</FullName>
+        <Organization>mac-vms</Organization>
+        <!-- Generic install key for Windows 11 Pro. Permits Setup to
+             complete without prompting; does NOT activate. Activation is a
+             downstream concern (real key via cloud-init, MAK injection,
+             or just live with the watermark in lab use). -->
+        <ProductKey>
+          <Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key>
+          <WillShowUI>OnError</WillShowUI>
+        </ProductKey>
+      </UserData>
+    </component>
+  </settings>
+
+  <!-- =========================================================================
+       specialize pass: computer name, locale persistence after install.
+       ========================================================================= -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>windows-11-arm64</ComputerName>
+      <TimeZone>UTC</TimeZone>
+      <!-- Skip the cloud-account requirement that 24H2 introduced. -->
+      <RegisteredOrganization>mac-vms</RegisteredOrganization>
+      <RegisteredOwner>mac-vms-build</RegisteredOwner>
+    </component>
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+  </settings>
+
+  <!-- =========================================================================
+       oobeSystem pass: skip OOBE, create build user, autologon once,
+       run FirstLogonCommands to bring up WinRM.
+       ========================================================================= -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <!-- Bypasses the Microsoft account requirement on Win11 24H2. If a
+             future Windows version blocks this too, splice in BYPASSNRO
+             registry writes via RunSynchronous in specialize. -->
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+      </OOBE>
+
+      <UserAccounts>
+        <AdministratorPassword>
+          <!-- MUST match var.build_password in variables.pkr.hcl. Rotated
+               to 32-byte random + account disabled by PackerBuildCleanup
+               scheduled task on first boot of any clone — see
+               provision/99-sysprep.ps1. -->
+          <Value>packer-build-only-Win11!</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>Administrator</Name>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>packer-build-only-Win11!</Value>
+              <PlainText>true</PlainText>
+            </Password>
+            <Description>Local admin used by Packer build pipeline. Rotated + disabled by PackerBuildCleanup on first clone boot.</Description>
+            <DisplayName>Administrator</DisplayName>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- LogonCount=1: the build needs exactly one auto-login (the first
+           OOBE boot, where FirstLogonCommands sets up WinRM). Windows
+           decrements the count to 0 and disables AutoAdminLogon itself
+           after that single use, so the registry values that survive
+           sysprep are already cleared on the build VM. The cleanup
+           scheduled task still wipes them on each clone for defense in
+           depth. -->
+      <AutoLogon>
+        <Username>Administrator</Username>
+        <Password>
+          <Value>packer-build-only-Win11!</Value>
+          <PlainText>true</PlainText>
+        </Password>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+      </AutoLogon>
+
+      <!-- Bring up WinRM so Packer's provisioner pipeline can connect.
+           Lifted from homelab/packer/windows-11-base/http/Autounattend.xml
+           with step 2 (virtio-win driver install) dropped — Tart's
+           Virtualization.framework doesn't use the QEMU virtio profile,
+           and Win11 ARM64 ships the in-box Apple Virtualization
+           network/storage drivers it needs.
+
+           Order is load-bearing:
+             1. Wait for the NIC to attach and complete DHCP. Apple
+                Virtualization.framework's NIC presents to the guest as a
+                virtio-like device; Win11 ARM64's in-box drivers handle it.
+                Get-NetConnectionProfile may briefly return nothing while
+                the network category is being assigned.
+             2. Force the network category to Private. AllowUnencrypted
+                refuses to apply on the Public profile (error 0x80338169
+                regardless of firewall rules, even with NetworkLocation=Work
+                in OOBE — Windows 24H2 quirk).
+             3. Enable WinRM service.
+             4. Configure WinRM listener (Basic + AllowUnencrypted, now
+                permitted because we are Private).
+             5. Open firewall port 5985 on all profiles.
+             6. Disable wuauserv so Windows Update doesn't try to download
+                during the build window. -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Wait for network and force profile to Private</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "for ($i=0; $i -lt 60; $i++) { $p = Get-NetConnectionProfile -ErrorAction SilentlyContinue; if ($p) { break }; Start-Sleep 2 }; Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Description>Enable WinRM service</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-Service -Name WinRM -StartupType Automatic; Start-Service WinRM"</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Description>Configure WinRM listener and auth</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "winrm quickconfig -quiet; winrm set winrm/config/service '@{AllowUnencrypted=\"true\"}'; winrm set winrm/config/service/auth '@{Basic=\"true\"}'"</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Description>Open firewall for WinRM</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "New-NetFirewallRule -Name 'WinRM HTTP-In' -DisplayName 'WinRM HTTP-In' -Profile Any -LocalPort 5985 -Protocol TCP -Action Allow"</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <Description>Disable Windows Update during build window</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-Service -Name wuauserv -StartupType Disabled; Stop-Service wuauserv -Force"</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
 </unattend>

@@ -11,7 +11,8 @@ shell-provisioner baseline.
   uses Apple's Virtualization.framework.
 - Tart installed: `brew install --cask tart`
 - Packer + the Tart plugin: `brew install packer && packer plugins install github.com/cirruslabs/tart`
-- ~20 GB free disk for the build (ISO download + final image).
+- `xorriso` for the ISO repack step: `brew install xorriso`
+- ~20 GB free disk for the build (ISO download + repacked ISO + final image).
 
 ## Build
 
@@ -43,12 +44,17 @@ Default credentials (build-only, kept on the image for first login):
 - password: `packer-build-only`
 
 The base image is intended to be **cloned** for downstream use rather than
-logged into directly. After cloning, supply real cloud-init user-data:
+logged into directly. After cloning, attach a NoCloud seed ISO with your
+per-VM user-data:
 
 ```bash
 tart clone ubuntu-24-04-arm64-base my-dev-vm
-tart run --dir=cloud-init:./my-cloud-init my-dev-vm
+tart run --disk=/tmp/seed.iso:ro my-dev-vm
 ```
+
+See [`docs/cloning-and-cloud-init.md`](../../docs/cloning-and-cloud-init.md)
+for how to build the seed ISO (hostname, admin user, SSH key) and what
+cloud-init does on first boot.
 
 ## Distributing between machines
 
@@ -75,13 +81,23 @@ bash -n provision/*.sh
 
 ## Gotchas / open questions
 
-- The `boot_command` keystrokes in `ubuntu.pkr.hcl` are a starting point.
-  ARM64 Ubuntu live boots into GRUB rather than the old BIOS boot prompt, and
-  the exact edit sequence depends on the current ISO's grub menu layout.
-  Expect to refine this on the first successful build.
-- ISO checksum handling: the `tart-cli` builder's behavior around
-  `iso_checksum` should be verified against the plugin README — left
-  commented out in the HCL for now.
+- **ISO is repacked, not handed in raw.** `scripts/build-ubuntu.sh` downloads
+  the upstream ARM64 live ISO, verifies SHA256 against the upstream
+  `SHA256SUMS`, then uses `xorriso` to replace `/boot/grub/grub.cfg` with a
+  minimal entry that autoboots into autoinstall mode and bakes the contents
+  of `./http/` as a NoCloud seed at `/nocloud/` on the ISO. The repacked ISO
+  lands at `packer_cache/iso/<name>-autoinstall.iso` and is what Packer
+  consumes. No `boot_command` keystrokes, no Packer HTTP server. If you bump
+  the upstream ISO version, delete both cached files in `packer_cache/iso/`
+  so the wrapper redownloads and repacks.
+- **The `http/` directory is misnamed but kept.** It used to be served over
+  HTTP by Packer; now it's the source for the on-ISO NoCloud seed. Same files,
+  different delivery. Rename if you mind, but the contents are still
+  `user-data` + `meta-data` in cloud-init shape.
+- **ISO source: cdimage, not releases.** ARM64 ISOs live at
+  `cdimage.ubuntu.com/releases/24.04/release/`, not `releases.ubuntu.com`
+  (which is amd64-only). The wrapper script's defaults are correct; just
+  flagging it because it bit us once.
 - The password hash in `http/user-data` must match `var.build_password` in
   `variables.pkr.hcl`. Both default to `packer-build-only`. Regenerate the
   hash if you change the plaintext:

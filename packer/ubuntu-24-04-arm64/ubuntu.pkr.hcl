@@ -1,16 +1,13 @@
 # ubuntu.pkr.hcl — Ubuntu 24.04 ARM64 base image, built via Tart.
 #
 // The tart-cli builder boots an aarch64 VM under Apple Virtualization.framework,
-// attaches the Ubuntu live ISO, and runs subiquity in autoinstall mode. The
-// installer fetches cloud-init data from a Packer-served HTTP endpoint
-// (http/user-data + http/meta-data). After install completes and the VM
-// reboots, shell provisioners harden the image and clear cloud-init state.
-//
-// TODO(next-session): verify exact boot_command keystrokes against the
-// packer-plugin-tart README + the current Ubuntu 24.04 live ISO grub menu.
-// The Linux ARM ISO uses GRUB rather than the BIOS-era boot prompt, so the
-// `<tab>` autoinstall append happens at the grub edit step ('e'), not at a
-// boot: prompt.
+// attaches a *repacked* Ubuntu live ISO, and runs subiquity in autoinstall
+// mode. The repack happens in scripts/build-ubuntu.sh — xorriso replaces the
+// upstream grub.cfg with one that autoboots into autoinstall mode, and bakes
+// the contents of ./http/ as a NoCloud seed at /nocloud/ on the ISO. That
+// removes any boot_command keystroke tuning and any Packer HTTP server.
+// After install completes and the VM reboots into the installed OS, shell
+// provisioners harden the image and clear cloud-init state.
 
 packer {
   required_version = ">= 1.10.0"
@@ -28,40 +25,30 @@ source "tart-cli" "ubuntu" {
   memory_gb    = var.memory_gb
   disk_size_gb = var.disk_size_gb
 
-  // Boot the live installer ISO. Tart creates a fresh empty VM and attaches
-  // the ISO as a CD-ROM, then boots it.
-  from_iso = [var.iso_url]
-  # iso_checksum = var.iso_checksum   // TODO(next-session): confirm whether the
-  //                                      tart-cli builder validates ISO checksums
-  //                                      directly or expects them on the download.
+  // Boot the repacked live installer ISO. Tart attaches it as a CD-ROM and
+  // boots. The tart-cli plugin's `from_iso` requires an *absolute local path*
+  // — no HTTPS — so the build wrapper handles the download, SHA256 check, and
+  // xorriso repack, then hands us the cached path via PKR_VAR_iso_path.
+  from_iso = [var.iso_path]
 
-  // Packer serves files from this dir on a random port; the boot_command
-  // points the kernel at {{ .HTTPIP }}:{{ .HTTPPort }}/ to fetch user-data.
-  http_directory = "http"
-
-  // The build user from http/user-data; SSH provisioners use this.
+  // The build user defined in http/user-data; SSH provisioners use this.
   ssh_username = var.build_username
   ssh_password = var.build_password
   ssh_timeout  = "45m"
 
-  // After cleanup script runs, shut the VM down so Tart can finalize the image.
-  shutdown_command = "sudo /sbin/shutdown -P now"
+  // Shutdown is handled by the tart-cli plugin at the end of the build —
+  // it issues PowerOff itself, then waits for the VM process to exit. The
+  // source doesn't expose a `shutdown_command` attribute and doesn't need
+  // one. (Earlier iterations of this file added an explicit
+  // `nohup shutdown -P now` provisioner; that worked but raced the plugin's
+  // own PowerOff and produced a noisy "shutdown already in progress" log.)
 
-  // TODO(next-session): the boot_command below is a starting point — the
-  // exact GRUB edit sequence for ARM64 Ubuntu 24.04 live needs verification.
-  // Pattern is: <esc> to interrupt grub, 'e' to edit the highlighted entry,
-  // arrow keys to the linux line, append autoinstall + ds=nocloud-net args,
-  // <F10> to boot. Headless makes this brittle — consider running with
-  // `display = "..."` and headed for the first successful pass, then
-  // switching back to headless once the boot_command stabilizes.
-  boot_wait = "10s"
-  boot_command = [
-    "<esc><wait>",
-    "e<wait>",
-    "<down><down><down><end>",
-    " autoinstall ds=nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/",
-    "<f10>",
-  ]
+  // No boot_command — the repacked ISO's grub.cfg autoboots straight into
+  // autoinstall mode (ds=nocloud;s=/cdrom/nocloud/), so there's nothing to
+  // type and no GRUB-edit-over-VNC fragility. boot_wait gives the kernel a
+  // moment to come up before Packer starts probing for SSH.
+  boot_wait    = "5s"
+  boot_command = []
 }
 
 build {
@@ -74,6 +61,7 @@ build {
     execute_command = "echo '${var.build_password}' | {{ .Vars }} sudo -S -E bash '{{ .Path }}'"
     scripts = [
       "provision/00-baseline.sh",
+      "provision/99-cleanup.sh",
     ]
   }
 }
