@@ -144,6 +144,21 @@ The user validates reproducibility by re-running the build themselves on a clean
 
 ---
 
+## Decision history (read this before touching the Windows pipeline)
+
+The Windows pipeline has been through several pivots that ruled out the obvious-looking approaches. Before making changes there, read [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) — it captures:
+
+- Why Tart can't host Win11 (no TPM 2.0 / Secure Boot exposed by Apple Virtualization.framework).
+- Why the Tart `vm_base_name` shortcut doesn't apply (no prebuilt Windows base from cirruslabs).
+- Why UTM is documented as the active Windows path despite being interactive-only.
+- Six QEMU/macOS plumbing gotchas already resolved (don't relive them).
+- The remaining wall — Win11 24H2 ARM64 WinPE has no in-box driver matching any QEMU storage controller, and 24H2 Setup ignores `Microsoft-Windows-PnpCustomizationsWinPE` driver injection per the homelab x86 build's findings.
+- The one viable continuation path — custom-rolled install ISO with virtio drivers pre-injected into `boot.wim` / `install.wim` via DISM or wimlib — and what to verify early if anyone takes it on.
+
+The Ubuntu side has no equivalent decision-history doc because it works end-to-end with no significant pivots.
+
+---
+
 ## Out of scope
 
 Don't add these without being asked first:
