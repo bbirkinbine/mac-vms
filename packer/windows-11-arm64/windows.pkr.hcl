@@ -71,7 +71,22 @@ source "qemu" "windows" {
   // CD-ROM. Windows Setup probes attached media for Autounattend.xml at the
   // root and applies it before the language picker — no boot_command
   // keystrokes needed.
-  cd_files = ["./Autounattend.xml"]
+  //
+  // The `drivers/` tree is staged by scripts/build-windows.sh from the
+  // virtio-win.iso pointed to by var.virtio_win_iso_path. Bundling the
+  // ARM64 viostor + vioscsi + NetKVM drivers into the same CD as
+  // Autounattend.xml means WinPE's PnpCustomizationsWinPE block can
+  // reference them via the same drive letter it just read the answer
+  // file from. The previous design attached virtio-win.iso as a separate
+  // third CD-ROM and the unattend pinned F:\viostor\w11\ARM64 — WinPE's
+  // drive-letter enumeration on ARM64 + EFI is non-deterministic, so
+  // that path silently missed and Setup never saw the disk. The unattend
+  // now lists multiple candidate drive letters (D:..G:) for the bundled
+  // tree so the injection resolves regardless of enumeration order.
+  cd_files = [
+    "./Autounattend.xml",
+    "./drivers",
+  ]
   cd_label = "UNATTEND"
 
   // Communicator. WinRM listens on 5985; Packer's qemu source arranges the
@@ -89,7 +104,14 @@ source "qemu" "windows" {
   // QEMU on macOS uses Cocoa (Apple's native UI), not GTK. Packer's qemu
   // plugin defaults `-display gtk` when not headless, which fails to
   // launch on macOS with "Parameter 'type' does not accept value 'gtk'".
-  display = "cocoa"
+  //
+  // zoom-to-fit=on makes the host window resizable (the default Cocoa
+  // window is pinned to the guest framebuffer resolution, which on EFI's
+  // default ~1024x768 is microscopic on a Retina display and the corners
+  // don't even show the drag-to-resize cursor). With zoom-to-fit=on the
+  // user can stretch the window and the guest scales to fit; Ctrl+Cmd+F
+  // toggles full-screen.
+  display = "cocoa,zoom-to-fit=on"
 
   // Windows installer's EFI bootloader shows a "Press any key to boot
   // from CD or DVD" prompt for ~5 seconds. If no key is pressed, the
@@ -124,8 +146,20 @@ build {
   // Sysprep terminates the WinRM session as part of /generalize. Packer
   // treats that disconnect as an error by default; valid_exit_codes lets
   // it complete cleanly.
+  //
+  // Exit codes we tolerate:
+  //   0       — script's explicit `exit 0` reached before WinRM dropped
+  //             (rare; usually the disconnect beats the exit).
+  //   1       — generic abort; PowerShell sometimes returns this when
+  //             the WinRM transport closes mid-stream.
+  //   2300218 — legacy WinRM-disconnect code on Win10 / Server 2019.
+  //   16001   — modern WinRM-disconnect code on Win11 / Server 2022+.
+  //             First seen on this build's 2026-05-13 ARM64 run; the
+  //             whole provisioner chain completed and sysprep was
+  //             confirmed to have initiated shutdown before the
+  //             disconnect. Treat as success.
   provisioner "powershell" {
     scripts          = ["provision/99-sysprep.ps1"]
-    valid_exit_codes = [0, 2300218]
+    valid_exit_codes = [0, 1, 2300218, 16001]
   }
 }

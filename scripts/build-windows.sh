@@ -11,6 +11,23 @@
 #     edk2 providing the UEFI firmware. The wrapper starts swtpm in the
 #     background, exports its socket path, then cleans up on exit.
 #
+# Driver injection strategy (2026-05 rewrite):
+#   - The previous design attached virtio-win.iso as a third CD-ROM and the
+#     Autounattend referenced F:\viostor\w11\ARM64. WinPE drive-letter
+#     enumeration on ARM64 + QEMU + EFI is non-deterministic, and the build
+#     repeatedly failed at "no installable hard drives found" because the
+#     Pnp injection block resolved to a path that wasn't there. (It also
+#     silently no-op'd when VIRTIO_WIN_ISO_PATH was unset, which was the
+#     state in committed .env.local.example.)
+#   - This wrapper now extracts the ARM64 viostor + NetKVM driver subset
+#     from virtio-win.iso into packer/windows-11-arm64/drivers/staging/,
+#     which the Packer source includes in the same CD that carries
+#     Autounattend.xml. The unattend block references the drivers via the
+#     same media WinPE just read the answer file from, eliminating the
+#     drive-letter guessing game. virtio-win.iso is still attached as a
+#     separate CD for FirstLogonCommands to pick up virtio-win-guest-tools
+#     after install.
+#
 # Usage: ./scripts/build-windows.sh
 
 set -euo pipefail
@@ -39,10 +56,11 @@ require_cmd() {
   }
 }
 
-require_cmd packer             "brew install packer"
+require_cmd packer              "brew install packer"
 require_cmd qemu-system-aarch64 "brew install qemu"
-require_cmd swtpm              "brew install swtpm"
-require_cmd xmllint            "comes with macOS; should already be present"
+require_cmd swtpm               "brew install swtpm"
+require_cmd xmllint             "comes with macOS; should already be present"
+require_cmd hdiutil             "comes with macOS; should already be present"
 
 # ---- env vars ---------------------------------------------------------------
 
@@ -87,11 +105,101 @@ else
   echo "      Paste Microsoft's published SHA256 into .env.local to enable verification." >&2
 fi
 
+# virtio-win.iso is now load-bearing for the build (not optional). The ARM64
+# driver subset gets extracted into the unattend CD; the full ISO is also
+# attached as a runtime CD so FirstLogonCommands can install virtio-win-
+# guest-tools-arm64.msi after Setup completes.
+if [[ -z "${VIRTIO_WIN_ISO_PATH:-}" ]]; then
+  echo "ERROR: VIRTIO_WIN_ISO_PATH is not set." >&2
+  echo "       Win11 ARM64 WinPE has no in-box drivers for QEMU's emulated" >&2
+  echo "       storage; the install will fail at the disk-selection screen" >&2
+  echo "       without injected virtio drivers." >&2
+  echo "       Download:" >&2
+  echo "         https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso" >&2
+  echo "       and set VIRTIO_WIN_ISO_PATH in .env.local. Releases 0.1.240+ ship ARM64 binaries." >&2
+  exit 1
+fi
+
+if [[ ! -f "${VIRTIO_WIN_ISO_PATH}" ]]; then
+  echo "ERROR: VIRTIO_WIN_ISO_PATH points to a file that doesn't exist: ${VIRTIO_WIN_ISO_PATH}" >&2
+  exit 1
+fi
+
 export PKR_VAR_iso_path="${WINDOWS_ISO_PATH}"
+export PKR_VAR_virtio_win_iso_path="${VIRTIO_WIN_ISO_PATH}"
 [[ -n "${WINDOWS_VM_NAME:-}"      ]] && export PKR_VAR_vm_name="${WINDOWS_VM_NAME}"
 [[ -n "${WINDOWS_CPU_COUNT:-}"    ]] && export PKR_VAR_cpu_count="${WINDOWS_CPU_COUNT}"
 [[ -n "${WINDOWS_MEMORY_GB:-}"    ]] && export PKR_VAR_memory_gb="${WINDOWS_MEMORY_GB}"
 [[ -n "${WINDOWS_DISK_SIZE_GB:-}" ]] && export PKR_VAR_disk_size_gb="${WINDOWS_DISK_SIZE_GB}"
+
+# ---- driver staging: extract ARM64 virtio drivers into the unattend CD ----
+#
+# WinPE on ARM64 24H2 has no in-box driver for QEMU's emulated storage. The
+# Autounattend's Microsoft-Windows-PnpCustomizationsWinPE block injects
+# viostor (virtio-blk) and NetKVM (virtio-net) before Setup probes for
+# disks. We stage those into ./drivers/staging/ on the build host; the
+# Packer source then bundles ./drivers/ into the same CD as Autounattend.xml
+# via cd_files, eliminating the WinPE-drive-letter guessing game that
+# attached-as-separate-CD-ROM made unavoidable.
+
+DRIVERS_DIR="${PACKER_DIR}/drivers"
+DRIVERS_STAGING="${DRIVERS_DIR}/staging"
+
+# Mount virtio-win.iso read-only via hdiutil. Detach on any exit path.
+VIRTIO_MOUNT="$(mktemp -d -t mac-vms-virtio-win.XXXXXX)"
+cleanup_virtio_mount() {
+  # hdiutil detach prints to stdout — silence it. Failure here is harmless
+  # (already detached) so suppress nonzero exit.
+  hdiutil detach "${VIRTIO_MOUNT}" -quiet 2>/dev/null || true
+  rmdir "${VIRTIO_MOUNT}" 2>/dev/null || true
+}
+trap cleanup_virtio_mount EXIT
+
+echo "==> mounting ${VIRTIO_WIN_ISO_PATH##*/}"
+hdiutil attach -nobrowse -readonly -mountpoint "${VIRTIO_MOUNT}" "${VIRTIO_WIN_ISO_PATH}" >/dev/null
+
+# Wipe any previous staging so renamed/removed drivers don't leak into
+# the new build's CD.
+rm -rf "${DRIVERS_STAGING}"
+mkdir -p "${DRIVERS_STAGING}"
+
+# Drivers WinPE needs at install time (storage + NIC). vioscsi covers the
+# QEMU virtio-scsi controller in case we ever swap disk_interface; harmless
+# to include alongside viostor. NetKVM is the virtio-net driver — without
+# it, the FirstLogonCommands network-setup step hangs forever waiting for
+# a DHCP lease that no driver will service.
+WINPE_DRIVERS=(viostor vioscsi NetKVM)
+
+# Path layout inside virtio-win.iso (as of 0.1.240+):
+#   /<driver>/w11/ARM64/<driver>.{cat,inf,sys}
+# Where w11 is the Win11/Server 2022 driver class. The .cat file is the
+# Microsoft-signed catalog — Secure Boot rejects the load without it.
+echo "==> staging ARM64 drivers into ${DRIVERS_STAGING#${REPO_ROOT}/}"
+missing=()
+for d in "${WINPE_DRIVERS[@]}"; do
+  src="${VIRTIO_MOUNT}/${d}/w11/ARM64"
+  if [[ ! -d "${src}" ]]; then
+    missing+=("${d}")
+    continue
+  fi
+  # Use cp -R with /. so we copy contents into the destination, not the
+  # ARM64 directory itself. Result: drivers/staging/viostor/viostor.{cat,inf,sys}.
+  mkdir -p "${DRIVERS_STAGING}/${d}"
+  cp -R "${src}/." "${DRIVERS_STAGING}/${d}/"
+done
+
+if (( ${#missing[@]} > 0 )); then
+  echo "ERROR: ARM64 driver tree missing from virtio-win.iso for: ${missing[*]}" >&2
+  echo "       Expected ${VIRTIO_MOUNT}/<driver>/w11/ARM64/ to exist." >&2
+  echo "       Your virtio-win.iso may pre-date 0.1.240 (first release shipping" >&2
+  echo "       ARM64 binaries). Upgrade and retry." >&2
+  exit 1
+fi
+
+# Detach now — we won't need the iso mounted again before packer launches
+# qemu (which uses VIRTIO_WIN_ISO_PATH directly, not the mount).
+cleanup_virtio_mount
+trap - EXIT
 
 # ---- swtpm (TPM 2.0 emulator) ----------------------------------------------
 #
@@ -140,25 +248,11 @@ fi
 # Packer at the wrapper instead of qemu-system-aarch64 directly.
 export SWTPM_SOCK
 export PKR_VAR_qemu_binary="${REPO_ROOT}/scripts/qemu-with-tpm.sh"
+# The qemu wrapper also reads VIRTIO_WIN_ISO_PATH (re-export for clarity
+# even though it's already exported from .env.local source above).
+export VIRTIO_WIN_ISO_PATH
 
-# Optional virtio-win driver ISO. Win11 ARM's WinPE has no in-box drivers
-# for QEMU's emulated storage; the installer can't see the disk without
-# Microsoft-signed virtio drivers loaded via Autounattend.xml's
-# Microsoft-Windows-PnpCustomizationsWinPE block. The wrapper attaches
-# this ISO as a third CD-ROM when set, so the unattend file can reference
-# its driver paths.
-if [[ -n "${VIRTIO_WIN_ISO_PATH:-}" ]]; then
-  if [[ ! -f "${VIRTIO_WIN_ISO_PATH}" ]]; then
-    echo "ERROR: VIRTIO_WIN_ISO_PATH points to a file that doesn't exist: ${VIRTIO_WIN_ISO_PATH}" >&2
-    exit 1
-  fi
-  echo "==> virtio-win driver ISO: ${VIRTIO_WIN_ISO_PATH##*/}"
-  export VIRTIO_WIN_ISO_PATH
-else
-  echo "WARN: VIRTIO_WIN_ISO_PATH unset. Win11 ARM Setup will not see the disk." >&2
-  echo "      Download https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso" >&2
-  echo "      and set VIRTIO_WIN_ISO_PATH in .env.local. See packer/windows-11-arm64/README.md." >&2
-fi
+echo "==> virtio-win driver ISO: ${VIRTIO_WIN_ISO_PATH##*/}"
 
 # ---- packer pipeline --------------------------------------------------------
 

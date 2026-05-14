@@ -146,16 +146,20 @@ The user validates reproducibility by re-running the build themselves on a clean
 
 ## Decision history (read this before touching the Windows pipeline)
 
-The Windows pipeline has been through several pivots that ruled out the obvious-looking approaches. Before making changes there, read [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) — it captures:
+The Windows pipeline went through several pivots before reaching the
+current working shape. Before making changes there, read
+[`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) — it
+captures, in chronological order:
 
 - Why Tart can't host Win11 (no TPM 2.0 / Secure Boot exposed by Apple Virtualization.framework).
 - Why the Tart `vm_base_name` shortcut doesn't apply (no prebuilt Windows base from cirruslabs).
-- Why UTM is documented as the active Windows path despite being interactive-only.
-- Six QEMU/macOS plumbing gotchas already resolved (don't relive them).
-- The remaining wall — Win11 24H2 ARM64 WinPE has no in-box driver matching any QEMU storage controller, and 24H2 Setup ignores `Microsoft-Windows-PnpCustomizationsWinPE` driver injection per the homelab x86 build's findings.
-- The one viable continuation path — custom-rolled install ISO with virtio drivers pre-injected into `boot.wim` / `install.wim` via DISM or wimlib — and what to verify early if anyone takes it on.
+- Why UTM is the recommended interactive consumption path for the Packer-built qcow2.
+- Six original QEMU/macOS plumbing gotchas resolved (the cheat-sheet table).
+- The "CD-ROM bus problem" — ARM `virt` has no IDE/SATA controller, so the qemu wrapper rewrites every `media=cdrom` drive to `usb-storage` form; otherwise WinPE can't read the install ISO or the unattend CD pre-injection.
+- USB enumeration order — the install ISO's usb-storage device must precede virtio-win.iso's so EDK2 auto-boots the right device.
+- The five-wall closing diagnostic (2026-05-13): CD-ROM bus → USB enum order → Win11 hardware-requirements check (LabConfig bypass in unattend) → NetBIOS computer-name 15-char cap → sysprep WinRM-disconnect exit code 16001.
 
-The Ubuntu side has no equivalent decision-history doc because it works end-to-end with no significant pivots.
+Build is verified end-to-end as of 2026-05-13: ~16 min wall-clock on M2 Max producing a sysprep'd qcow2 in `packer/windows-11-arm64/output-windows-11-arm64/`. The Ubuntu side has no equivalent decision-history doc because it works end-to-end with no significant pivots.
 
 ---
 

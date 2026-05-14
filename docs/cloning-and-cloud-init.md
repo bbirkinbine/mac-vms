@@ -106,24 +106,43 @@ ssh brian@$(tart ip my-dev-vm)
 If cloud-init didn't apply (no IP, hostname unchanged), see "Debugging" at
 the bottom.
 
-## Windows — see the UTM runbook
+## Windows — base image works, per-VM identity injection is the open question
 
 The Tart-based path is impossible (no TPM/Secure Boot). The
 Packer+QEMU+swtpm pipeline under
-[`../packer/windows-11-arm64/`](../packer/windows-11-arm64/) is scaffolded
-but currently blocked at Win11 24H2 Setup's "no disks found" screen — the
-WinPE driver set ships nothing matching QEMU's emulated storage
-controllers, and 24H2 ignores Autounattend driver injection.
-[`../packer/windows-11-arm64/README.md`](../packer/windows-11-arm64/README.md)
-has the full account.
+[`../packer/windows-11-arm64/`](../packer/windows-11-arm64/) builds a
+sysprep'd qcow2 in ~16 min on M2 Max — see
+[`../packer/windows-11-arm64/README.md`](../packer/windows-11-arm64/README.md).
+Consumption is via UTM or `qemu-system-aarch64` directly
+([`windows-utm.md`](windows-utm.md)).
 
-Active Windows path is [`windows-utm.md`](windows-utm.md): install
-interactively in UTM (which handles the driver question by walking you
-through it), then UTM's GUI for snapshot + clone. No cloud-init seed in
-the loop until either the Packer pipeline can revive or someone builds
-ARM64 `cloudbase-init`. The Windows-side gotchas to keep in mind if the
-cloud-init seam ever comes back: `passwd:` is plaintext not a hash on
-Windows, hostname change forces a reboot, NetBIOS-15 truncation.
+The seam where the Ubuntu story has cloud-init + NoCloud seed, the
+Windows story doesn't have an equivalent yet: cloudbase-init has no
+official ARM64 installer at [cloudbase.it/downloads/](https://cloudbase.it/downloads/)
+as of 2026-05, so the qcow2 boots into OOBE-mini and you create the
+local user interactively. The `PackerBuildCleanup` scheduled task does
+fire at first boot (rotating + disabling the build Administrator
+account) so clones are not reachable via the build-time credentials,
+but there's no automatic per-VM hostname / SSH-key / user-account
+injection yet.
+
+Two viable paths if you need that automation before cloudbase-init
+ships ARM64:
+
+1. **Build cloudbase-init from source** — Python wheel + pythonized
+   service wrapper. Non-trivial but tractable; the
+   [cloudbase-init repo](https://github.com/cloudbase/cloudbase-init)
+   is pure Python.
+2. **NoCloud-style PowerShell bootstrap** — a scheduled task at first
+   boot reads `user-data` from an attached unattend ISO and applies it.
+   Bespoke, but matches the existing `PackerBuildCleanup` mechanism.
+
+Either way, the Windows-side gotchas to keep in mind when you do wire
+it up: `passwd:` is plaintext (not a hash) on Windows, hostname change
+forces a reboot, NetBIOS computer names are capped at 15 characters
+(the unattend XML enforces this inside its own validator, not via XSD —
+see [windows-build-attempts.md](windows-build-attempts.md) for the
+diagnostic story).
 
 ## What NOT to do
 

@@ -16,6 +16,12 @@ crash.*.log
 output-*/
 *.tart
 
+# virtio-win ARM64 driver staging tree, extracted from virtio-win.iso at
+# build time by scripts/build-windows.sh. The drivers/ directory itself is
+# tracked (with .gitkeep + README.md) so cd_files paths resolve at packer-
+# validate time even without a build run.
+packer/windows-11-arm64/drivers/staging/
+
 # Downloaded installer media — large, redistributable only sometimes (Windows
 # ARM64 VHDX from Microsoft is bring-your-own; Ubuntu ISO is fine to re-fetch).
 *.iso

@@ -15,6 +15,12 @@ variable "qemu_binary" {
   # No default; the wrapper provides an absolute path.
 }
 
+variable "virtio_win_iso_path" {
+  type        = string
+  description = "Absolute path to virtio-win.iso. The wrapper extracts the ARM64 viostor / vioscsi / NetKVM driver tree into ./drivers/staging/ for inclusion in the unattend CD; the full ISO is also attached as a runtime CD-ROM by scripts/qemu-with-tpm.sh so FirstLogonCommands can install virtio-win-guest-tools-arm64 after Setup completes. Required — Win11 ARM64 WinPE can't see the boot disk without these drivers."
+  # No default; the build wrapper fails fast if this isn't set.
+}
+
 variable "vm_name" {
   type        = string
   description = "Filename (without path) of the qcow2 disk image Packer writes into output_directory."

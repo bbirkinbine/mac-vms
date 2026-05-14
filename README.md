@@ -110,20 +110,24 @@ cp .env.local.example .env.local   # gitignored
 just build-ubuntu
 tart run ubuntu-24-04-arm64-base
 
-# Windows is currently UTM-only — the Packer qemu pipeline gets stopped
-# at Win11 24H2 Setup's "no disks found" screen due to a WinPE driver
-# gap (no in-box driver matches QEMU's emulated controllers, and 24H2
-# Setup ignores the Autounattend driver-injection block). The Packer
-# scaffolding is preserved in packer/windows-11-arm64/ in case the
-# upstream story changes. See docs/windows-utm.md for the active path.
+# Build the Windows base (runs under qemu-system-aarch64 + swtpm).
+# Requires WINDOWS_ISO_PATH and VIRTIO_WIN_ISO_PATH in .env.local —
+# see packer/windows-11-arm64/README.md for download steps.
+just build-windows
+# Output: packer/windows-11-arm64/output-windows-11-arm64/windows-11-arm64-base
+# Import into UTM or boot directly with qemu-system-aarch64 — see
+# docs/windows-utm.md for both consumption paths.
 ```
 
 The two pipelines diverge because Tart can't host Windows 11 (no TPM 2.0
 or Secure Boot, both Win11 requirements). Ubuntu builds + runs entirely
-under Tart; Windows runs under UTM, with a Packer+QEMU+swtpm pipeline
-scaffolded but blocked at the WinPE driver wall — see
-[`packer/windows-11-arm64/README.md`](packer/windows-11-arm64/README.md)
-for the full story.
+under Tart; Windows builds under Packer's `qemu` source with `swtpm` for
+the TPM and `edk2` for UEFI, then the resulting qcow2 runs under UTM or
+QEMU directly. The Windows build resolved a multi-wall diagnostic
+sequence (CD-ROM bus, USB enumeration order, hardware-requirements
+check, NetBIOS name length, sysprep exit code) — captured in
+[`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) for
+the next person who has to touch it.
 
 ## Repository layout
 

@@ -1,36 +1,27 @@
-# Windows 11 ARM64 base image — paused at WinPE driver wall
+# Windows 11 ARM64 base image — qemu + swtpm + bundled virtio injection
 
-> **Status: scaffolding complete, end-to-end build blocked.** The Packer
-> config parses, validates, and runs as far as Windows Setup's "no
-> installable hard drives found" screen. We've verified that Win11
-> 24H2 ARM64 WinPE has no in-box driver matching any of QEMU's emulated
-> storage controllers (virtio-blk, NVMe, AHCI all return empty disk list),
-> and the homelab x86 Packer build documents that **Win11 24H2 Setup
-> ignores `Microsoft-Windows-PnpCustomizationsWinPE` driver injection** —
-> meaning even an `arm64` virtio-win.iso wired in via Autounattend.xml
-> probably won't help. The remaining viable path is a **custom-rolled
-> install ISO** with virtio drivers pre-injected into `boot.wim` /
-> `install.wim` via DISM, which is a significant ongoing project and not
-> attempted here.
+> **Status (2026-05-13): green, verified end-to-end.** Full build produces
+> a sysprep'd qcow2 in ~16 minutes wall-clock on M2 Max + Apple HVF. The
+> closing diagnostic session resolved five distinct walls (CD-ROM bus,
+> USB enumeration order, Win11 hardware-check, NetBIOS name length,
+> sysprep exit code) — captured in
+> [`../../docs/windows-build-attempts.md`](../../docs/windows-build-attempts.md).
+> Read that doc before changing anything in this directory; most of the
+> obvious-looking moves have already been ruled out.
 >
-> **Active Windows path: UTM** — see
-> [`../../docs/windows-utm.md`](../../docs/windows-utm.md). UTM handles
-> the driver question by walking the user through it interactively, which
-> is fine for the laptop-lab use case CLAUDE.md describes.
->
-> Everything below documents the scaffolding's intent so this is
-> resumable if either (a) Microsoft fixes the 24H2 unattend injection
-> bug, or (b) someone undertakes the custom-ISO project.
+> UTM remains an option for interactive use of the qcow2 — see
+> [`../../docs/windows-utm.md`](../../docs/windows-utm.md) for the import
+> recipe.
 
-Packer config that *would* produce `windows-11-arm64-base.qcow2` in
+Packer config that produces `windows-11-arm64-base` (a qcow2) in
 `./output-windows-11-arm64/`. Built via Packer's `qemu` source under
 `qemu-system-aarch64` + `swtpm` on Apple Silicon's HVF accelerator — Tart
-can't host Windows 11 (no TPM 2.0, no Secure Boot), so we use QEMU for the
-build and UTM (or QEMU itself) for runtime consumption.
+can't host Windows 11 (no TPM 2.0, no Secure Boot), so we use QEMU for
+the build and UTM (or QEMU itself) for runtime consumption.
 
-The output qcow2 was intended to be the equivalent of the Ubuntu base's
-Tart image artifact: a sysprep'd, generalized image suitable for cloning
-into per-VM identities downstream.
+The output qcow2 is the equivalent of the Ubuntu base's Tart image
+artifact: a sysprep'd, generalized image suitable for cloning into
+per-VM identities downstream.
 
 ## Prerequisites
 
@@ -49,6 +40,14 @@ into per-VM identities downstream.
   3. Set `WINDOWS_ISO_PATH` in `.env.local` to its absolute path.
   4. Optionally set `WINDOWS_ISO_SHA256` in `.env.local` to the SHA256 from
      step 2; the build wrapper verifies before invoking Packer.
+- **`virtio-win.iso`** with ARM64 drivers (release 0.1.240 or later).
+  Download from
+  [virtio-win stable](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso)
+  and set `VIRTIO_WIN_ISO_PATH` in `.env.local`. The build wrapper
+  extracts the ARM64 viostor / vioscsi / NetKVM subset into the unattend
+  CD so WinPE can load them at install time; the full ISO is also
+  attached as a runtime CD-ROM for FirstLogonCommands to pick up the
+  guest-tools installer.
 
 ## Build
 
@@ -67,15 +66,18 @@ WINDOWS_ISO_PATH=/path/to/Win11_24H2_English_Arm64.iso \
 
 The wrapper:
 
-1. Verifies dependencies (`packer`, `qemu-system-aarch64`, `swtpm`, `xmllint`).
-2. Verifies the ISO exists and (optionally) its SHA256.
-3. Starts `swtpm` in the background, exposes its socket via
-   `PKR_VAR_swtpm_socket_path`. Cleans up on any exit.
-4. Runs `packer init`, `fmt -check`, `validate`, `build`.
+1. Verifies dependencies (`packer`, `qemu-system-aarch64`, `swtpm`, `xmllint`, `hdiutil`).
+2. Verifies the Windows and virtio-win ISOs exist and (optionally) the Windows SHA256.
+3. Mounts `virtio-win.iso`, extracts the ARM64 viostor / vioscsi / NetKVM
+   driver trees into `drivers/staging/`, then detaches the ISO mount.
+4. Starts `swtpm` in the background, exposes its socket. Cleans up on any exit.
+5. Runs `packer init`, `fmt -check`, `validate`, `build`. Packer's `cd_files`
+   packs `Autounattend.xml` + `drivers/` into the unattend CD that Setup
+   reads at first probe.
 
-Build duration: ~30-60 minutes for the install + provisioners + sysprep.
-Apple HVF acceleration runs Windows 11 ARM64 at near-native speed; the
-duration is mostly Windows Setup itself.
+Build duration: ~16 minutes wall-clock on M2 Max (verified 2026-05-13).
+Apple HVF runs Windows 11 ARM64 at near-native speed; the duration is
+mostly Windows Setup itself.
 
 ## Output
 
@@ -127,73 +129,52 @@ xmllint --noout Autounattend.xml
 bash -n ../../scripts/build-windows.sh
 ```
 
-## What works, what doesn't, why we paused
+## Inputs expected from `.env.local`
 
-End-to-end status of the pipeline we built before pausing:
-
-| Step | State |
-| --- | --- |
-| `swtpm` provides TPM 2.0 over Unix socket | Works |
-| EDK2 UEFI firmware + writable NVRAM per build | Works |
-| HVF acceleration on Apple Silicon | Works |
-| qemu launches successfully with all our overrides | Works |
-| EFI splash + "Press any key to boot from CD" + Setup boot | Works (boot_command spam-enter) |
-| Cocoa display via `ramfb` | Works |
-| `Autounattend.xml` discovered + applied through the language picker | Works (silent skip past it) |
-| **Setup finds the boot disk** | **Fails — no in-box driver** |
-
-We tried three storage interfaces and got "no disks found" on all of them:
-
-- `virtio-blk` (Packer's default `disk_interface=virtio`)
-- `NVMe` (via wrapper-script argv rewrite)
-- `AHCI/SATA` (also via wrapper rewrite)
-
-The homelab x86 build uses AHCI/SATA successfully because Win11 24H2 *x86*
-WinPE ships `storahci.sys` in-box. The ARM64 driver set is different and
-none of the QEMU controllers we tried matched. The homelab also documents
-that 24H2 ignores the `Microsoft-Windows-PnpCustomizationsWinPE` driver
-injection mechanism, so the unattend block we wrote (referencing
-`virtio-win.iso` paths) probably wouldn't help even if a binary-compatible
-ARM64 driver existed there.
-
-The viable remaining path is the **"custom-rolled install ISO"** mentioned
-as out-of-scope in the homelab comments: use DISM to inject virtio
-drivers directly into `boot.wim` and `install.wim` on a copy of the
-Windows install ISO, then point Packer at that. Significant work and
-brittle to upstream Win11 ISO changes; not attempted here.
-
-## Scaffolding kept for future revival
-
-The Autounattend.xml, build wrapper, qemu+TPM wrapper, and provisioner
-pipeline are all complete and validated. If the WinPE driver story
-changes (Microsoft fixes the unattend bug, or virtio-win publishes
-boot-wim-injection tooling, or you take on the custom-ISO project), the
-build should run from `just build-windows` without further plumbing.
-
-Inputs the build expects from `.env.local`:
-
-- `WINDOWS_ISO_PATH` (required) — Win11 24H2 ARM64 ISO
+- `WINDOWS_ISO_PATH` (**required**) — Win11 24H2 ARM64 ISO. The build
+  wrapper hard-fails if missing.
+- `VIRTIO_WIN_ISO_PATH` (**required**) — `virtio-win.iso` release 0.1.240
+  or later (for ARM64 binaries). The build wrapper hard-fails if missing.
+  Drivers extracted from this ISO are bundled into the unattend CD so
+  WinPE can load them before the disk probe; the full ISO is also
+  attached as a runtime CD for FirstLogonCommands to pick up the
+  guest-tools installer.
 - `WINDOWS_ISO_SHA256` (optional) — published hash for integrity check
-- `VIRTIO_WIN_ISO_PATH` (optional) — virtio-win.iso, attached as third
-  CD-ROM by the qemu wrapper if set. Referenced by the unattend's
-  `Microsoft-Windows-PnpCustomizationsWinPE` block — note that 24H2 may
-  ignore this block per homelab findings.
+  before sinking ~16 min into a build against a corrupt download.
 
 ## Gotchas / open questions
 
 - **`qemu_binary` points at a wrapper script, not `qemu-system-aarch64`.**
   Packer's qemu plugin treats `qemuargs` as a complete replacement for
-  its auto-generated args, not an append — using `qemuargs` to inject
-  TPM kills the disk/CD/network/EFI setup. The workaround is
-  [`scripts/qemu-with-tpm.sh`](../../scripts/qemu-with-tpm.sh): the
-  wrapper forwards all of Packer's args to the real binary and appends
-  the three TPM args at the end. Anyone debugging "qemu failed to
-  start" should check the wrapper first.
+  its auto-generated args, not an append. The workaround is
+  [`scripts/qemu-with-tpm.sh`](../../scripts/qemu-with-tpm.sh): forwards
+  Packer's args verbatim and appends/rewrites surgically. It does four
+  things — adds TPM 2.0 (swtpm), adds `ramfb` + USB controller + input
+  devices, rewrites every Packer-generated `media=cdrom` drive to
+  `usb-storage` form (ARM `virt` has no IDE/SATA controller), and
+  attaches `virtio-win.iso` as a third usb-storage CD. The wrapper also
+  logs its final qemu argv to
+  `packer_cache/qemu-with-tpm.cmd.log` — first place to look if qemu
+  refuses to start.
+- **USB enumeration order matters for EFI auto-boot.** EDK2 on ARM virt
+  walks USB devices in argv order looking for `\EFI\Boot\bootaa64.efi`;
+  if a non-bootable usb-storage device (like virtio-win.iso) precedes
+  the install ISO, EDK2 drops to the EFI Shell instead of booting
+  Setup. The wrapper enforces the right order — keep the install ISO's
+  usb-storage device first if you ever restructure.
+- **NetBIOS computer-name limit (15 chars).** Enforced inside
+  Microsoft-Windows-Shell-Setup's own validator, not the answer file's
+  XSD — `xmllint` and `packer validate` will both pass a 16-char name,
+  then specialize bails on first reboot with hrResult=0x80220005. Cap
+  any change to `<ComputerName>` at 15.
+- **Sysprep exit codes from PowerShell over WinRM.** Win11 24H2 returns
+  `16001` when the WinRM service is torn down mid-`sysprep /generalize`
+  (the legacy code is `2300218`); `valid_exit_codes` in
+  `windows.pkr.hcl` accepts both.
 - **swtpm state is wiped per build.** The wrapper deletes the swtpm state
   directory before starting a new run. If you ever need to preserve TPM
   state between builds (sealed-data testing), remove the `rm -rf` line
-  in `scripts/build-windows.sh`. Default behavior is the right one for
-  reproducible base-image builds.
+  in `scripts/build-windows.sh`.
 - **EFI firmware path is hardcoded** to `/opt/homebrew/share/qemu/`. If
   Homebrew installs QEMU elsewhere (unusual), update both
   `efi_firmware_code` and `efi_firmware_vars` in `windows.pkr.hcl`.
@@ -207,6 +188,13 @@ Inputs the build expects from `.env.local`:
   account" friction. The Autounattend.xml uses `HideOnlineAccountScreens`
   which still works as of 2026-05; if it stops working, the next escape
   hatch is RunSynchronous registry writes for the BYPASSNRO key.
+- **NetKVM may not survive WinPE → installed-system handoff.**
+  `setupact.log` from a clean build still shows `CApplyDrivers::
+  CopyToDriverStore: Failed to copy driver package` warnings for the
+  NetKVM INF. The FirstLogonCommands pnputil step re-installs NetKVM
+  from the unattend CD before WinRM bring-up, so the build still
+  succeeds — but if NetKVM ever stops re-installing cleanly the
+  symptom will be a hang at "waiting for WinRM."
 - **cloudbase-init for ARM64.** No official installer at
   [cloudbase.it/downloads/](https://cloudbase.it/downloads/) yet. Until
   one lands, clones won't auto-consume cloud-init seeds for per-VM
