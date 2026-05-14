@@ -103,6 +103,15 @@ Do **not** lift:
 
 ---
 
+## Git commit conventions
+
+- **No `Co-Authored-By:` trailers.** Do not add a Claude / Anthropic / AI co-author trailer to commit messages in this repo, even though the Claude Code default tells you to. The user is the sole author; AI assistance is acknowledged in the README and doesn't need per-commit attribution on a public repo. This overrides the default `Co-Authored-By: Claude ... <noreply@anthropic.com>` footer.
+- **No "Generated with Claude Code" footer** in commit messages or PR bodies for the same reason. Acknowledgement lives in [`README.md`](README.md), not on every commit.
+- Match the existing log style: lowercase, terse, scope-then-summary (`README/CLAUDE: ...`, `add run-windows probe; fix UTM Virtualize→Emulate`). No conventional-commits prefixes (`feat:`, `fix:`, `chore:`) — they're not the style here.
+- Body paragraphs are fine when the *why* is non-obvious; skip them when the subject line is self-explanatory.
+
+---
+
 ## Style preferences
 
 Match the homelab repo's tone.
