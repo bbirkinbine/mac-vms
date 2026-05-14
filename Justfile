@@ -19,6 +19,17 @@ build-ubuntu:
 build-windows:
     @./scripts/build-windows.sh
 
+# Boot the built Windows qcow2 directly under qemu-system-aarch64 with the
+# same TPM + EFI + ramfb + USB plumbing the build used. Probes whether the
+# artifact is good without UTM in the way. Defaults to a COW clone so the
+# base qcow2 stays sysprep-fresh.
+#
+#   just run-windows          # COW clone (reuses run.qcow2 if present)
+#   just run-windows --fresh  # wipe COW + NVRAM, start clean
+#   just run-windows --base   # boot base qcow2 directly (dirties it)
+run-windows *FLAGS:
+    @./scripts/run-windows.sh {{FLAGS}}
+
 # --- validation --------------------------------------------------------------
 
 # `packer fmt -check` + `packer validate` across every Packer dir. The

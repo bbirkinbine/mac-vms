@@ -36,7 +36,15 @@ guests.
 After `just build-windows` produces
 `packer/windows-11-arm64/output-windows-11-arm64/windows-11-arm64-base.qcow2`:
 
-1. **Create a new VM** in UTM: **File → New → Virtualize → Other**.
+1. **Create a new VM** in UTM: **File → New → Emulate → Other**.
+
+   > Pick **Emulate**, NOT Virtualize. Virtualize uses Apple's
+   > Virtualization.framework, which doesn't expose TPM 2.0 to non-macOS
+   > guests and doesn't run the EDK2-ARM64 firmware this qcow2 was built
+   > against. The symptom of picking Virtualize is the wizard graying
+   > out the qcow2 import in step 6 — UTM detects the AVF target can't
+   > host the disk and disables the Import button.
+
 2. **Skip the wizard's ISO step** — we already have a disk; pick **Skip
    ISO Boot** and finish.
 3. **Right-click the new VM → Edit**.
