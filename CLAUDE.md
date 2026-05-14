@@ -1,6 +1,6 @@
 # CLAUDE.md — Apple Silicon VM lab
 
-> **Purpose.** Persistent project context for Claude Code working in this repo. Read this before suggesting changes or scaffolding files. This is a *fresh* repo — the first task is to lay down the skeleton described below. A sibling repo (`homelab`) already exists for the x86_64 Proxmox side; reuse the patterns from there but do not copy code blindly.
+> **Purpose.** Persistent project context for Claude Code working in this repo. Read this before suggesting structural changes. A sibling repo (`homelab`) already exists for the x86_64 Proxmox side; the patterns there inform this one, but the architecture is ARM-native and the Windows pipeline diverges significantly (see [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md)).
 
 ---
 
@@ -12,14 +12,9 @@ Companion to the x86_64 `homelab` repo (Proxmox cluster + Packer templates). Tha
 
 ---
 
-## Host machines
+## Host machine
 
-Two MacBook Pro workstations. Either can build and run images.
-
-- **Personal M2 Max, 96 GB RAM** — primary build host; bigger memory ceiling for heavier guests.
-- **Work M4 Max, 64 GB RAM** — secondary; may have MDM restrictions on hypervisor install (check before assuming Parallels or VMware Fusion is available).
-
-Both are ARM64. Anything x86_64 will run under emulation and is out of scope.
+Built and verified on a MacBook Pro M2 Max with 96 GB RAM. Apple Silicon (ARM64) is required for both pipelines — Tart relies on Apple Virtualization.framework, and the Windows build uses QEMU's `hvf` accelerator which is Apple-Silicon-only on macOS. Anything x86_64 will run under emulation and is out of scope.
 
 ---
 
@@ -29,9 +24,10 @@ These are the calls I've already made. Don't relitigate them in the scaffolding 
 
 ### Use
 
-- **Packer** for image builds. Same shape as the `homelab` repo's `packer/*/` directories — HCL sources, an `http/` directory for installer config, a `provision/` directory for post-install scripts, an env-driven wrapper script per target.
-- **Tart** (`cirruslabs/tart`) as the primary builder + runtime. ARM-native, uses Apple's Virtualization.framework, has a first-class Packer plugin (`packer-plugin-tart`). Produces versioned VM images that `tart run` launches directly. Designed for CI but works locally.
-- **UTM** as the interactive/visual alternative when a guest needs a window manager and hand-driving. UTM consumes qcow2 from Packer's `qemu` builder if Tart doesn't fit a use case.
+- **Packer** for image builds. Same shape as the `homelab` repo's `packer/*/` directories — HCL sources, a `provision/` directory for post-install scripts, an env-driven wrapper script per target.
+- **Tart** (`cirruslabs/tart`) as the Ubuntu builder + runtime. ARM-native, uses Apple's Virtualization.framework, has a first-class Packer plugin (`packer-plugin-tart`). Produces versioned VM images that `tart run` launches directly. Designed for CI but works locally.
+- **Packer's `qemu` source + `qemu-system-aarch64` + `swtpm`** as the Windows builder. Tart can't host Windows — not just because of TPM/Secure Boot (the original blocker) but also because Apple Virtualization.framework only exposes virtio buses to non-macOS guests and ARM Win11 WinPE has no in-box virtio-blk driver, so the install can't read the boot media. QEMU sidesteps both via `swtpm` for TPM 2.0, `edk2` for UEFI, and a wrapper script that rewrites `media=cdrom` drives to `usb-storage` form so WinPE's in-box xHCI stack can read them. Output is a qcow2; see [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) for the full diagnostic history.
+- **UTM** as the interactive front-end for the Windows qcow2 the Packer build produces. UTM ships TPM 2.0 and Secure Boot natively and is the right tool for snapshot/clone management of an installed Windows VM.
 
 ### Skip
 
@@ -43,8 +39,8 @@ These are the calls I've already made. Don't relitigate them in the scaffolding 
 
 ### Defer (mention but don't scaffold)
 
-- **Parallels Desktop** Packer builder. Excellent Windows-on-ARM experience but requires a paid license; only add if Tart's Windows path proves rocky.
-- **VMware Fusion** Packer builder. Free for personal use now; viable fallback if Tart blocks.
+- **Parallels Desktop** Packer builder. Excellent Windows-on-ARM experience but requires a paid license; only add if the QEMU+swtpm path regresses (it works as of 2026-05-13).
+- **VMware Fusion** Packer builder. Free for personal use; viable fallback for the same scenario.
 
 ---
 
@@ -62,9 +58,10 @@ When the user kicks off scaffolding, produce the following in one pass. Stop and
    - `variables.pkr.hcl` — ISO URL/checksum, VM specs (CPUs, RAM, disk), image output name.
    - `README.md` — quick-start, prerequisites (Tart installed, Packer + plugin installed), validation steps, image-run instructions.
 5. **`packer/windows-11-arm64/`**
-   - `windows.pkr.hcl` — single `tart-cli` source targeting Windows 11 ARM64. (The Microsoft Windows Insider ARM64 VHDX is the usual source; document the download step in the README — do not commit the VHDX.)
-   - `Autounattend.xml` — fresh, ARM64-targeted. **Do not copy the homelab `Autounattend.xml`**; it's x86_64-specific (driver paths, SKU index, partition layout). The *philosophy* of the homelab Windows provisioners (Defender tuning, OneDrive removal, sysprep at the end) is worth carrying over once the base install works.
-   - `provision/` — empty placeholder for `.ps1` provisioners; do not write them in the first pass.
+   - `windows.pkr.hcl` — single `qemu` source (not `tart-cli` — Tart can't host Windows; see the "Decision history" section below). Targets the public Win11 24H2 ARM64 ISO from Microsoft. `qemu_binary` points at a wrapper script (`scripts/qemu-with-tpm.sh`) that injects TPM + ramfb + USB + usb-storage CD rewrites.
+   - `Autounattend.xml` — fresh, ARM64-targeted. **Do not copy the homelab `Autounattend.xml`**; it's x86_64-specific (driver paths, SKU index, partition layout). The *philosophy* of the homelab Windows provisioners (Defender tuning, OneDrive removal, sysprep at the end) carries over.
+   - `drivers/` — populated at build time by the wrapper from `virtio-win.iso`. Staging tree is gitignored; `.gitkeep` + `README.md` are tracked.
+   - `provision/` — five PowerShell scripts (00 wait-for-winrm, 15 cleanup, 20 harden [stub], 30 cloudbase-init [stub], 99 sysprep).
    - `variables.pkr.hcl`, `README.md` — same shape as the Ubuntu directory.
 6. **`scripts/`**
    - `build-ubuntu.sh` — env-driven wrapper that sources `.env.local`, validates Tart + Packer are installed, runs `packer init` / `validate` / `build`. Same shape as homelab's `build-pve.sh`: fail loud, validate preconditions up front, no branching dispatcher.
@@ -99,7 +96,7 @@ This will be a public GitHub repo. Treat it accordingly.
 
 - Never commit `.env.*` (gitignored — verify before staging).
 - No real passwords in `Autounattend.xml`. A build-only password like `packer-build-only-Win11!` is fine; it gets rotated by sysprep.
-- The user's secret store is **KeePassXC unlocked with a YubiKey** (backup YubiKey enrolled). When suggesting credential flows, default to "read from `.env.local` at invocation time" or "fetch from KeePassXC at run time." Don't default to 1Password CLI, Vault, or SOPS — those are options, not the current shape.
+- Credential flow defaults to "read from `.env.local` at invocation time" — `.env.local` is gitignored and assumed to come from your local secret manager. Don't default to 1Password CLI, Vault, or SOPS; those are options, not the current shape.
 - Any Packer variable that takes a secret must use `sensitive = true` and be passed via `PKR_VAR_*` env vars from the wrapper script.
 
 ---
@@ -110,7 +107,7 @@ Match the homelab repo's tone.
 
 - Substantive comments where *why* is non-obvious. Terse where it's obvious.
 - One-line summary at the top of every `.ps1` / `.sh` provisioner saying what it does.
-- HCL gets `//` comments on non-obvious lines (why these CPU/RAM defaults, why this specific Tart base image, why two separate wrapper scripts).
+- HCL gets `//` comments on non-obvious lines (why these CPU/RAM defaults, why this specific Tart base image for Ubuntu, why the qemu wrapper script approach for Windows).
 - READMEs are full quick-start + prerequisites + validation + gotchas. No 20-line stubs.
 - Avoid emojis in repo files.
 - Avoid the words *genuinely*, *straightforward*, *actually* in prose.
@@ -151,7 +148,7 @@ current working shape. Before making changes there, read
 [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) — it
 captures, in chronological order:
 
-- Why Tart can't host Win11 (no TPM 2.0 / Secure Boot exposed by Apple Virtualization.framework).
+- Why Tart can't host Win11 — three layered blockers (no Windows VM configuration in Tart's source, no TPM in Apple Virtualization.framework, AVF only exposes virtio buses to non-macOS guests and ARM WinPE has no in-box viostor).
 - Why the Tart `vm_base_name` shortcut doesn't apply (no prebuilt Windows base from cirruslabs).
 - Why UTM is the recommended interactive consumption path for the Packer-built qcow2.
 - Six original QEMU/macOS plumbing gotchas resolved (the cheat-sheet table).

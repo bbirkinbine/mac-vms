@@ -56,18 +56,59 @@ Initial plan per [`../CLAUDE.md`](../CLAUDE.md): build Windows under Tart
 the same way Ubuntu is built (tart-cli source, from_iso, Autounattend.xml
 delivered via removable media).
 
-**Why abandoned:** Tart can't host Windows 11 at all. Tart's source code
-([Run.swift in cirruslabs/tart](https://github.com/cirruslabs/tart/blob/main/Sources/tart/Commands/Run.swift))
-has no TPM or Secure Boot wiring — both Win11 system requirements.
-Confirmed by [Motionbug's Apple-Silicon-Win11 article](https://motionbug.com/options-for-virtualizing-windows-11-arm-on-an-apple-silicon-mac/)
-which explicitly excludes Tart for the same reason. The black-screen +
-input-stutter symptom we hit early on wasn't really about Tart's display
-layer — it was that Setup refused to proceed without TPM.
+**Why abandoned:** Tart can't host Windows at all, and the reasons stack
+three deep. We initially understood only the first one; the third only
+became obvious after solving the equivalent problem on QEMU.
 
-**What still applies if Tart adds TPM later:** the
-[`Autounattend.xml`](../packer/windows-11-arm64/Autounattend.xml) and the
-provisioner pipeline (00 / 15 / 20 / 30 / 99) work conceptually under any
-QEMU-shaped Windows builder.
+1. **No Windows VM configuration in Tart's source.** Tart's
+   [Run.swift](https://github.com/cirruslabs/tart/blob/main/Sources/tart/Commands/Run.swift)
+   supports two guest types — macOS (`VZMacOSVirtualMachineConfiguration`)
+   and Linux (`VZGenericMachineConfiguration` + kernel/initrd boot).
+   There is no `--windows` flag, no Windows-aware EFI firmware path, no
+   Windows boot wiring. This is a cirruslabs-side feature gap, not an
+   Apple-side one — it could in principle be added.
+
+2. **No TPM 2.0 device in Apple Virtualization.framework.** AVF has no
+   `VZTPMDeviceConfiguration` class for non-macOS guests. We worked
+   around this on QEMU with swtpm; AVF has no equivalent socket-attached
+   TPM mechanism. Confirmed by
+   [Motionbug's Apple-Silicon-Win11 article](https://motionbug.com/options-for-virtualizing-windows-11-arm-on-an-apple-silicon-mac/)
+   which explicitly excludes Tart for the same reason. This one needs
+   Apple to ship a new AVF API; cirruslabs can't route around it.
+
+3. **AVF only exposes virtio buses to non-macOS guests, and ARM Win11
+   WinPE has no in-box viostor.** This is the deepest blocker and is
+   the same WinPE driver story we resolved on QEMU. On QEMU we attach
+   CDs as `usb-storage` and WinPE's in-box xHCI stack lets it read
+   them. On AVF there is no USB, no SATA, no NVMe — every disk is
+   virtio-blk. So the boot sequence becomes:
+
+   ```text
+   EFI loads boot.wim from a virtio-blk-attached ISO  →  WinPE takes
+   over  →  WinPE re-enumerates buses with its own drivers  →  no
+   viostor in-box  →  WinPE sees no storage at all  →  can't read
+   the boot device it just came from  →  Setup never reaches the
+   disk picker.
+   ```
+
+   Our PnpCustomizationsWinPE driver-injection mechanism doesn't help
+   because the unattend CD with the driver INFs is also on virtio-blk
+   that WinPE can't see. No fallback bus available.
+
+**What would it take for Tart to host Windows?** All three above plus a
+pre-built install ISO with viostor injected into both `boot.wim` and
+`install.wim` (DISM `/Add-Driver` on Windows, or wimlib on macOS, then
+xorriso to repack preserving the El Torito EFI boot record). Even then
+the build pipeline would lose its "stock Microsoft ISO + Autounattend"
+ergonomics, and Tart's value-add (OCI registry distribution,
+declarative VM specs) doesn't outweigh re-rolling the install media on
+every Microsoft 24H2.x update. Not pursued.
+
+**What carries over from this build to a hypothetical Tart-based one:**
+Autounattend.xml's `<RunSynchronous>` LabConfig bypass and the
+`FirstLogonCommands` chain are platform-independent and would apply.
+Everything else (qemu wrapper rewrites, swtpm wiring, usb-storage CD
+attach order, ramfb display) is QEMU-specific and would not.
 
 ### 2. Tart `vm_base_name` against a cirruslabs prebuilt — ruled out
 
@@ -144,8 +185,8 @@ injection on Win11 ARM64 24H2, citing the sibling homelab x86 build's
 finding that "24H2 Setup ignores `Microsoft-Windows-Setup\DriverPaths`."
 
 **That conclusion conflated two different unattend elements.** Re-reading
-the homelab Autounattend
-([`~/Downloads/src/homelab/packer/windows-11-base/http/Autounattend.xml`](file:///Users/brian.birkinbine/Downloads/src/homelab/packer/windows-11-base/http/Autounattend.xml)):
+the homelab Autounattend (`packer/windows-11-base/http/Autounattend.xml`
+in the sibling repo):
 
 > Driver paths live on Microsoft-Windows-PnpCustomizationsWinPE (above),
 > not here. Win11 24H2's setup host silently ignores
@@ -269,8 +310,8 @@ The fix tightens the wrapper and reshapes the driver delivery path:
 
 5. **Manual-boot diagnostic script.**
    [`../scripts/qemu-manual-boot.sh`](../scripts/qemu-manual-boot.sh)
-   boots the Win11 ARM64 ISO under the same QEMU + swtpm + UEFI + ramfb
-   + USB stack as the build, but without Packer or the unattend CD. Use
+   boots the Win11 ARM64 ISO under the same QEMU/swtpm/UEFI/ramfb/USB
+   stack as the build, but without Packer or the unattend CD. Use
    it for Shift+F10 → cmd diagnostics if something doesn't work: enumerate
    drive letters via `diskpart list vol`, test `drvload` on specific
    INFs, try alternative storage controllers.
@@ -342,12 +383,16 @@ The pipeline scaffolding is committed and validated:
 
 If you're picking this up later or sharing with a teammate's Claude:
 
-- The chronological narrative + the "WinPE driver wall" section explain
-  the *why* of the current design — read once.
+- The status block at the top of this doc is the TL;DR of what works
+  and what closed walls we hit getting there.
+- The chronological narrative + the "WinPE driver wall" and "CD-ROM bus
+  problem" sections explain the *why* of the current design — read once.
 - The QEMU gotchas table is the "don't repeat these" cheat sheet.
-- The "what's still uncertain" section is the actual research agenda
-  for the next person who runs `just build-windows` and hits something
-  unexpected.
+- The "What's confirmed (2026-05-13 closing run)" section captures the
+  hypotheses the verified build closed out. If a future build regresses,
+  re-test those before assuming a new failure mode.
+- The "Fallback path if injection ever regresses" section is the only
+  open research direction documented here.
 - [`../CLAUDE.md`](../CLAUDE.md) is the durable repo context; this doc
   is the decision-history that doesn't fit there.
 

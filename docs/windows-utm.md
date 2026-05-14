@@ -13,11 +13,14 @@ recommended primary path, since clones share the same provisioner state.
 
 ## Why UTM at all (vs Tart)
 
-Tart can't host Win11 — it doesn't expose TPM 2.0 or UEFI Secure Boot,
-both Win11 system requirements. UTM is the Apple Silicon front-end for
-QEMU; it ships both natively. The Packer build also uses QEMU + swtpm
-under the hood, so an imported qcow2 keeps the same platform shape it
-was built on.
+Tart can't host Win11 — three layered blockers (no Windows VM
+configuration in Tart's source, no TPM in Apple Virtualization.framework,
+and AVF only exposing virtio buses that ARM WinPE has no in-box driver
+for; see [`windows-build-attempts.md`](windows-build-attempts.md) §1
+for the full analysis). UTM is the Apple Silicon front-end for QEMU; it
+ships TPM 2.0 + Secure Boot + USB controllers natively. The Packer build
+also uses QEMU + swtpm under the hood, so an imported qcow2 keeps the
+same platform shape it was built on.
 
 ## Prerequisites
 
@@ -66,31 +69,49 @@ Skips UTM entirely; faster iteration if you live in the terminal.
 
 ```bash
 # One-time: make a copy-on-write clone from the golden image so the base
-# stays clean.
-qemu-img create -f qcow2 \
-  -b packer/windows-11-arm64/output-windows-11-arm64/windows-11-arm64-base.qcow2 \
-  -F qcow2 mywork.qcow2
+# stays clean. Also copy the matching EFI vars file — Packer's qemu
+# source seeds NVRAM during the install, and the qcow2 won't boot
+# cleanly against a fresh edk2-arm-vars.fd template.
+cd packer/windows-11-arm64/output-windows-11-arm64
+qemu-img create -f qcow2 -b windows-11-arm64-base -F qcow2 mywork.qcow2
+cp efivars.fd mywork-vars.fd
 
-# Then boot. The TPM + UEFI args mirror what scripts/build-windows.sh +
-# windows.pkr.hcl set during the build, so the platform shape is the same.
-mkdir -p /tmp/swtpm-mywork
+# Start swtpm. Path stays short so we don't blow macOS's 104-byte
+# Unix-socket-path limit.
+SWTPM_DIR="$(mktemp -d -t mywork.XXXXXX)"
 swtpm socket \
-  --tpmstate dir=/tmp/swtpm-mywork \
-  --ctrl type=unixio,path=/tmp/swtpm-mywork/sock \
+  --tpmstate "dir=${SWTPM_DIR}" \
+  --ctrl "type=unixio,path=${SWTPM_DIR}/s" \
   --tpm2 --daemon
 
+# Boot. The args mirror what scripts/qemu-with-tpm.sh produces during
+# the build:
+#   - No virtualization=on — HVF refuses nested-virt passthrough.
+#   - pflash for both EFI code (RO) and vars (RW) — -bios doesn't work
+#     for Secure-Boot-aware boots from disk on edk2-aarch64.
+#   - ramfb so EFI has a framebuffer to draw on (ARM virt has no
+#     graphics device by default).
+#   - qemu-xhci + usb-kbd + usb-tablet so the VM accepts input.
+#   - tpm-tis-device wires swtpm into the guest.
+#   - cocoa,zoom-to-fit=on lets you drag-resize the host window.
 qemu-system-aarch64 \
-  -machine virt,gic-version=max,virtualization=on \
+  -machine virt,gic-version=max \
   -accel hvf \
   -cpu host \
   -smp 4 -m 8192 \
-  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
-  -chardev socket,id=chrtpm,path=/tmp/swtpm-mywork/sock \
-  -tpmdev emulator,id=tpm0,chardev=chrtpm \
-  -device tpm-tis-device,tpmdev=tpm0 \
-  -drive if=virtio,file=mywork.qcow2,format=qcow2 \
-  -device virtio-net-pci,netdev=net0 -netdev user,id=net0 \
-  -display cocoa
+  -drive "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-aarch64-code.fd" \
+  -drive "if=pflash,format=raw,file=mywork-vars.fd" \
+  -chardev "socket,id=chrtpm,path=${SWTPM_DIR}/s" \
+  -tpmdev "emulator,id=tpm0,chardev=chrtpm" \
+  -device "tpm-tis-device,tpmdev=tpm0" \
+  -device "ramfb" \
+  -device "qemu-xhci,id=usb" \
+  -device "usb-kbd,bus=usb.0" \
+  -device "usb-tablet,bus=usb.0" \
+  -drive "file=mywork.qcow2,if=virtio,format=qcow2" \
+  -device "virtio-net-pci,netdev=net0" \
+  -netdev "user,id=net0" \
+  -display "cocoa,zoom-to-fit=on"
 ```
 
 ## Snapshotting + clone-equivalent workflow

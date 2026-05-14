@@ -22,8 +22,13 @@ output-*/
 # validate time even without a build run.
 packer/windows-11-arm64/drivers/staging/
 
+# Real seed YAMLs contain SSH pubkeys, hashes, etc. — never commit.
+# Whitelist the .example.yaml template only, same pattern as .env.*.
+packer/*/seed/*.yaml
+!packer/*/seed/*.example.yaml
+
 # Downloaded installer media — large, redistributable only sometimes (Windows
-# ARM64 VHDX from Microsoft is bring-your-own; Ubuntu ISO is fine to re-fetch).
+# ARM64 ISO from Microsoft is bring-your-own; Ubuntu ISO is fine to re-fetch).
 *.iso
 *.vhdx
 *.vhd

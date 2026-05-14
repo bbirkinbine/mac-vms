@@ -4,18 +4,18 @@ This is the runbook for what happens **after** Packer finishes building a
 base image — how to clone it into a usable VM and how the clone gets a
 per-VM hostname, admin user, and SSH key on first boot.
 
-The sibling `homelab` repo's
-[`docs/cloning-templates.md`](https://github.com/brianbirkinbine/homelab/blob/main/docs/cloning-templates.md)
-covers the same ground for Proxmox + `bpg/proxmox` + `cloudbase-init`. The
-mental model carries over; the mechanism is different because Tart doesn't
-attach a cloud-init drive for you. Read this doc for the Tart-specific
-plumbing and that doc for the deeper rationale.
+The sibling (private) `homelab` repo covers the same ground for Proxmox
+with `bpg/proxmox` and `cloudbase-init`. The mental model carries over;
+the mechanism is different because neither Tart nor QEMU attaches a
+cloud-init drive for you. This doc handles the mac-vms-specific plumbing.
 
-## Mental model — three layers
+## Mental model — three layers (Ubuntu path)
+
+For Ubuntu, the three-layer model is fully wired:
 
 | Layer | What | Where | Re-runnable? |
 | --- | --- | --- | --- |
-| 1. **Packer** | Baseline OS + hardening baked into a versioned Tart image | [`packer/ubuntu-24-04-arm64/`](../packer/ubuntu-24-04-arm64/), [`packer/windows-11-arm64/`](../packer/windows-11-arm64/) | Rarely — only OS/base changes |
+| 1. **Packer** | Baseline OS + hardening baked into a versioned Tart image | [`packer/ubuntu-24-04-arm64/`](../packer/ubuntu-24-04-arm64/) | Rarely — only OS/base changes |
 | 2. **Tart clone** | A copy-on-write VM with its own disk and identity | `tart clone <base> <newvm>` | Every new VM |
 | 3. **cloud-init seed** | Per-VM hostname, user, SSH key, network — injected on first boot | NoCloud seed ISO attached at `tart run` time | Once per VM instance |
 
@@ -23,14 +23,55 @@ The seam to internalise: Tart does **not** read your cloud-init data and
 hand it to the guest. You build a small seed ISO; cloud-init inside the
 guest discovers it on first boot.
 
+For Windows the analogous layers exist but layer 3 is the open question
+— see the "Windows" section below.
+
 ## Ubuntu — the working path
 
 The Ubuntu base image (built by `just build-ubuntu`) ships with
 `cloud-init` installed and configured to honour the `NoCloud` datasource.
-Anything you put on a seed ISO with filesystem label `CIDATA` and the
+Anything you put on a seed ISO with filesystem label `cidata` and the
 expected file names will be applied on first boot.
 
-### 1. Write your user-data
+[`packer/ubuntu-24-04-arm64/seed/build-cidata.sh`](../packer/ubuntu-24-04-arm64/seed/build-cidata.sh)
+wraps the recipe below — that's the fast path for a quick test VM. Use it
+unless you have a reason to do the steps manually.
+
+### Quick start (test VM in three commands)
+
+```bash
+cd packer/ubuntu-24-04-arm64
+
+# 1. Copy the example seed, fill in your SSH key (and optionally a password hash).
+cp seed/lab-seed.example.yaml seed/lab-seed.yaml
+${EDITOR:-vim} seed/lab-seed.yaml
+
+# 2. Build the cidata.iso (volume label "cidata", contains user-data + meta-data).
+./seed/build-cidata.sh
+
+# 3. Clone the base and boot with the seed attached.
+tart clone ubuntu-24-04-arm64-base test-vm
+tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
+```
+
+Then in another terminal:
+
+```bash
+ssh lab@$(tart ip test-vm)
+```
+
+(The `lab` user is what the example yaml creates — change `users[0].name`
+in `seed/lab-seed.yaml` to use a different login.)
+
+After the first successful boot you can drop the `--disk` flag — the seed
+is only consulted while `instance-id` stays the same. The script derives
+`instance-id` from a hash of the user-data, so edits force re-application
+on the next boot and identical seeds are no-ops.
+
+### What's in the seed
+
+The example at [`seed/lab-seed.example.yaml`](../packer/ubuntu-24-04-arm64/seed/lab-seed.example.yaml)
+shows the minimum useful shape. The semantically important fields:
 
 ```yaml
 #cloud-config
@@ -53,78 +94,102 @@ by a systemd one-shot installed at image-build time
 (see [`packer/ubuntu-24-04-arm64/provision/99-cleanup.sh`](../packer/ubuntu-24-04-arm64/provision/99-cleanup.sh)).
 You don't need to clean it up from your cloud-init.
 
-Save as `user-data` (no extension) in a working directory, alongside a
-`meta-data` file containing at minimum:
+### Manual recipe (skip the script)
 
-```yaml
+If you want to build the cidata ISO by hand, e.g. to integrate with a
+different workflow:
+
+```bash
+mkdir cloud-init-dir
+cat > cloud-init-dir/user-data <<'EOF'
+#cloud-config
+# ... (same shape as above)
+EOF
+cat > cloud-init-dir/meta-data <<'EOF'
 instance-id: my-dev-vm-001
 local-hostname: my-dev-vm
-```
+EOF
 
-### 2. Build the NoCloud seed ISO
-
-macOS ships `hdiutil`, which produces an ISO 9660 image with a settable
-volume label:
-
-```bash
 hdiutil makehybrid -o /tmp/seed.iso -hfs -joliet -iso \
-  -default-volume-name CIDATA \
-  -joliet-volume-name CIDATA \
-  -hfs-volume-name CIDATA \
+  -default-volume-name cidata \
+  -joliet-volume-name cidata \
+  -hfs-volume-name cidata \
   ./cloud-init-dir
-```
 
-`cloud-init-dir/` is the working directory containing `user-data` and
-`meta-data`. The volume label **must be `CIDATA`** (or `cidata`) — that's
-how cloud-init's NoCloud datasource auto-detects the seed.
-
-If you prefer `mkisofs`-style tooling, `brew install cdrtools` and:
-
-```bash
-mkisofs -output /tmp/seed.iso -volid CIDATA -joliet -rock ./cloud-init-dir
-```
-
-### 3. Clone the base and run with the seed attached
-
-```bash
 tart clone ubuntu-24-04-arm64-base my-dev-vm
 tart run --disk=/tmp/seed.iso:ro my-dev-vm
 ```
 
-On first boot, cloud-init mounts the CD-ROM, reads `user-data` +
-`meta-data`, and applies them. Subsequent boots are no-ops as long as the
-`instance-id` doesn't change. After the first successful boot you can drop
-the `--disk` flag — the seed is only needed once per identity.
-
-### 4. SSH in
-
-```bash
-tart ip my-dev-vm
-ssh brian@$(tart ip my-dev-vm)
-```
+The volume label **must be `cidata`** (case-insensitive — `CIDATA` works
+too) — that's how cloud-init's NoCloud datasource auto-detects the seed.
 
 If cloud-init didn't apply (no IP, hostname unchanged), see "Debugging" at
 the bottom.
 
 ## Windows — base image works, per-VM identity injection is the open question
 
-The Tart-based path is impossible (no TPM/Secure Boot). The
+The Tart-based path isn't viable (three layered blockers — see
+[`windows-build-attempts.md`](windows-build-attempts.md) §1). The
 Packer+QEMU+swtpm pipeline under
 [`../packer/windows-11-arm64/`](../packer/windows-11-arm64/) builds a
 sysprep'd qcow2 in ~16 min on M2 Max — see
 [`../packer/windows-11-arm64/README.md`](../packer/windows-11-arm64/README.md).
 Consumption is via UTM or `qemu-system-aarch64` directly
-([`windows-utm.md`](windows-utm.md)).
+([`windows-utm.md`](windows-utm.md)). The three-layer model maps to:
+
+| Layer | Ubuntu | Windows |
+| --- | --- | --- |
+| 1. Packer | Tart image (`~/.tart/vms/<name>`) | qcow2 (`packer/windows-11-arm64/output-windows-11-arm64/<name>`) |
+| 2. Clone | `tart clone` | UTM clone, or `qemu-img create -b <base>.qcow2 -F qcow2 new.qcow2` |
+| 3. Seed | NoCloud ISO + cloud-init | **No automated mechanism yet** — see below |
 
 The seam where the Ubuntu story has cloud-init + NoCloud seed, the
 Windows story doesn't have an equivalent yet: cloudbase-init has no
 official ARM64 installer at [cloudbase.it/downloads/](https://cloudbase.it/downloads/)
 as of 2026-05, so the qcow2 boots into OOBE-mini and you create the
-local user interactively. The `PackerBuildCleanup` scheduled task does
-fire at first boot (rotating + disabling the build Administrator
-account) so clones are not reachable via the build-time credentials,
-but there's no automatic per-VM hostname / SSH-key / user-account
-injection yet.
+local user **interactively** on first boot. The `PackerBuildCleanup`
+scheduled task does fire at first boot (rotating + disabling the build
+Administrator account) so clones are not reachable via the build-time
+credentials, but there's no automatic per-VM hostname / SSH-key /
+user-account injection yet.
+
+### Quick start (test VM with interactive account creation)
+
+UTM path — easiest:
+
+```bash
+just build-windows   # if you haven't already
+open -a UTM
+# File → New → Virtualize → Other → Skip ISO Boot
+# Edit VM → System: ARM64 / QEMU virt / 8 GiB / 4 cores; TPM + Secure Boot on
+# Drives → Import → point at output-windows-11-arm64/windows-11-arm64-base
+# Play.
+```
+
+Or terminal path — see [`windows-utm.md`](windows-utm.md#running-the-qcow2-directly-via-qemu)
+for the full `qemu-system-aarch64` invocation.
+
+Either way, first boot lands at OOBE-mini. Walk through:
+
+1. Region / keyboard layout → Next, Next.
+2. Network — pick "I don't have internet" if it shows up (the bypass is
+   already in the unattend but 24H2 sometimes re-prompts). If that
+   option is missing, press `Shift+F10` → `OOBE\BYPASSNRO` → VM reboots
+   and you'll get the local-account form.
+3. Enter a test account name + password — that's your login. The build
+   Administrator is already disabled by `PackerBuildCleanup`; only this
+   new account works.
+4. Decline the data / Recall / Copilot opt-ins.
+
+Once the desktop loads, you've got a usable test VM. Snapshot from UTM
+(**VM toolbar → More → Save Snapshot**) so you can roll back to a clean
+state without rerunning OOBE.
+
+Why no automated equivalent of the Ubuntu cidata script yet: a CIDATA
+ISO would be valid, but the qcow2 has no NoCloud consumer installed
+(see `provision/30-install-cloudbase-init.ps1` — still a stub). Adding
+a seed-builder script for Windows is scaffolding for when one of the
+two consumers below exists.
 
 Two viable paths if you need that automation before cloudbase-init
 ships ARM64:
@@ -179,9 +244,10 @@ journalctl -u cloud-init -u cloud-init-local --no-pager | tail -100
 
 Common causes:
 
-- **Wrong volume label on the seed ISO.** `CIDATA` (uppercase) is the
-  canonical label. Verify with `isoinfo -d -i /tmp/seed.iso | grep -i
-  'Volume id'`.
+- **Wrong volume label on the seed ISO.** Must be `cidata` (case-insensitive
+  — the script writes lowercase, but `CIDATA` works too). Verify on macOS
+  with `hdiutil imageinfo packer/ubuntu-24-04-arm64/output-seed/cidata.iso | grep -i 'Volume Name'`,
+  or `xorriso -indev <path> -toc 2>&1 | grep -i label` if you have xorriso.
 - **`instance-id` reused from a previous run.** cloud-init treats the
   same `instance-id` as "already applied" and no-ops. Bump it when
   changing user-data on a VM that already booted.
@@ -190,9 +256,9 @@ Common causes:
   hint is also a useful breadcrumb that this isn't a state volume.
 - **Cloud-init datasource lookup is wrong.** The Ubuntu base ships with
   the stock datasource list. If you tighten it (e.g. for a clone that
-  goes air-gapped after first boot), see the homelab provisioner
-  [`30-cloud-init-config.sh`](https://github.com/brianbirkinbine/homelab/blob/main/packer/ubuntu-24-04-base/provision/30-cloud-init-config.sh)
-  for the pattern.
+  goes air-gapped after first boot), write a `90_datasource.cfg` snippet
+  under `/etc/cloud/cloud.cfg.d/` pinning `datasource_list: [NoCloud, None]`
+  during the Packer build's provision phase.
 
 ## Where context lives
 
@@ -200,5 +266,3 @@ Common causes:
 - Per-OS Packer notes:
   [`packer/ubuntu-24-04-arm64/README.md`](../packer/ubuntu-24-04-arm64/README.md),
   [`packer/windows-11-arm64/README.md`](../packer/windows-11-arm64/README.md)
-- Homelab equivalent (Proxmox, deeper coverage):
-  [`homelab/docs/cloning-templates.md`](https://github.com/brianbirkinbine/homelab/blob/main/docs/cloning-templates.md)

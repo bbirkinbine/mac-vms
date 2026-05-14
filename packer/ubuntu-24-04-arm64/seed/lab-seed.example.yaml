@@ -1,0 +1,36 @@
+#cloud-config
+# Lab seed for ad-hoc Ubuntu VMs cloned from ubuntu-24-04-arm64-base.
+#
+# Copy this file to seed/lab-seed.yaml (gitignored), fill in your credentials,
+# then run ./seed/build-cidata.sh to produce ./output-seed/cidata.iso. Pass
+# that to `tart run --disk=<path>:ro <vm>` on first boot — cloud-init reads
+# it via the NoCloud datasource and applies everything below.
+#
+# After first boot you can drop the --disk flag; the seed is only consulted
+# while instance-id stays the same (cloud-init no-ops on re-runs).
+#
+# Field semantics (Linux side):
+#   - passwd: must be a SHA-512 hash, NOT plaintext. Generate with
+#       mkpasswd -m sha-512        (apt: whois package)
+#       python3 -c "import crypt; print(crypt.crypt('NEW', crypt.mksalt(crypt.METHOD_SHA512)))"
+#     Putting plaintext here will silently set the literal string as the
+#     password hash (i.e. lock you out).
+#   - ssh_authorized_keys: list of strings; first entry is added to
+#     ~/.ssh/authorized_keys for the user.
+#   - groups: [sudo] grants passwordless sudo via the sudo: line.
+#
+# See ../../../docs/cloning-and-cloud-init.md for the full background.
+
+hostname: lab
+manage_etc_hosts: true
+
+users:
+  - name: lab
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    # Optional. Comment out to make this an SSH-key-only account.
+    # passwd: '$6$REPLACE-WITH-SHA512-HASH'
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA...replace-with-your-pubkey... user@host

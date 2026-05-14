@@ -44,17 +44,27 @@ Default credentials (build-only, kept on the image for first login):
 - password: `packer-build-only`
 
 The base image is intended to be **cloned** for downstream use rather than
-logged into directly. After cloning, attach a NoCloud seed ISO with your
-per-VM user-data:
+logged into directly. The fast path for a per-VM identity (hostname, user,
+SSH key) uses `seed/build-cidata.sh`:
 
 ```bash
-tart clone ubuntu-24-04-arm64-base my-dev-vm
-tart run --disk=/tmp/seed.iso:ro my-dev-vm
+cp seed/lab-seed.example.yaml seed/lab-seed.yaml   # then edit
+./seed/build-cidata.sh                              # writes output-seed/cidata.iso
+
+tart clone ubuntu-24-04-arm64-base test-vm
+tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
+ssh <user-from-yaml>@$(tart ip test-vm)
 ```
 
+`seed/lab-seed.yaml` is gitignored; only the `.example.yaml` template is
+tracked. The script derives a stable `instance-id` from a hash of the
+yaml so identical seeds are no-ops on re-runs and edits force
+re-application on the next boot. Detach the `--disk` flag after the
+first successful boot.
+
 See [`docs/cloning-and-cloud-init.md`](../../docs/cloning-and-cloud-init.md)
-for how to build the seed ISO (hostname, admin user, SSH key) and what
-cloud-init does on first boot.
+for the full background, the manual hdiutil recipe, and debugging tips
+when cloud-init silently doesn't apply.
 
 ## Distributing between machines
 
