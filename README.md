@@ -1,11 +1,22 @@
 # mac-vms
 
-> **Status:** Published as a personal-lab reference, not an actively
-> maintained product. Issues and PRs are welcome but won't
-> get fast turnaround. The [`docs/`](docs/) tree (especially
+> ## Status
+>
+> Published as a personal-lab reference, not an actively maintained product.
+> Issues and PRs are welcome but won't get fast turnaround. The
+> [`docs/`](docs/) tree — especially
 > [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md), the
-> diagnostic history of the Windows ARM64 install) is the most likely
-> thing to be useful to others.
+> diagnostic history of the Windows ARM64 install — and the per-component
+> runbooks under [`packer/*/README.md`](packer/) are the parts most likely
+> to be useful to others.
+>
+> **This repo is in-flight.** Both pipelines have been verified end-to-end
+> on an M2 Max, but the shape of [`docs/`](docs/), the
+> [`scripts/`](scripts/) wrappers, and the cloud-init / cidata seed flow
+> for downstream clones are still settling as new requirements surface.
+> Anything called out as "verified" in a per-component README has been
+> exercised end-to-end on real hardware; the rest is subject to change
+> without notice. Pin a specific commit if you depend on a snapshot.
 
 Reproducible Ubuntu 24.04 ARM64 and Windows 11 ARM64 VM images for Apple
 Silicon MacBooks, both built with [Packer](https://www.packer.io/). The two

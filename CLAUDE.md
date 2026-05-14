@@ -92,12 +92,14 @@ Do **not** lift:
 
 ## Secrets and public-repo hygiene
 
-This will be a public GitHub repo. Treat it accordingly.
+**This is a public GitHub repo** ([github.com/bbirkinbine/mac-vms](https://github.com/bbirkinbine/mac-vms)). Everything you write here is world-readable — file contents, commit messages, branch names, PR descriptions, and issue comments. Treat it accordingly.
 
 - Never commit `.env.*` (gitignored — verify before staging).
 - No real passwords in `Autounattend.xml`. A build-only password like `packer-build-only-Win11!` is fine; it gets rotated by sysprep.
 - Credential flow defaults to "read from `.env.local` at invocation time" — `.env.local` is gitignored and assumed to come from your local secret manager. Don't default to 1Password CLI, Vault, or SOPS; those are options, not the current shape.
 - Any Packer variable that takes a secret must use `sensitive = true` and be passed via `PKR_VAR_*` env vars from the wrapper script.
+- **Commit messages, branch names, and PR/issue text are public too.** Don't reference internal hostnames, coworker names, ticket IDs from private trackers, or path fragments from unrelated private repos. If a diagnostic detail is load-bearing for the commit, scrub identifying bits before writing the message.
+- No internal URLs, Slack links, private Linear/Jira IDs, or paths under `~/` that leak user/org structure in code comments or docs either — same surface, same rules.
 
 ---
 
