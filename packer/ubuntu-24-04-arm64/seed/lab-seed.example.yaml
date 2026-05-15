@@ -48,6 +48,11 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     lock_passwd: false
     # Optional. Comment out to make this an SSH-key-only account.
+    # Generate the hash with:
+    #   openssl passwd -6 'YOURPASS'
+    # and paste the full ~110-char output (starts '$6$<salt>$') between
+    # the quotes below. See the header note for why python3 -c "import
+    # crypt" silently produces garbage on macOS.
     # passwd: '$6$REPLACE-WITH-SHA512-HASH'
     ssh_authorized_keys:
       - ssh-ed25519 AAAA...replace-with-your-pubkey... user@host
