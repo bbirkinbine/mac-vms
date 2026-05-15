@@ -3,22 +3,6 @@
 Open work and known gaps in mac-vms. Keep this short — entries should either
 get fixed or move into a doc with proper background.
 
-## Ubuntu — full cycle not yet re-verified after `ubuntu-homelab-learnings`
-
-The `ubuntu-homelab-learnings` branch ported the systemd ordering fix,
-image-hygiene wipes, xorriso cidata builder, and password-hash documentation
-from the sibling homelab repo. Canary checks on a single clone pass
-end-to-end. What hasn't happened yet:
-
-- The base image has not been rebuilt from scratch since the branch's
-  provisioner changes landed. (Initial verification ran on a base built
-  shortly before the branch — the new 99-cleanup directives have only
-  been exercised on a single clone, not on a freshly-built base.)
-- The full `just clean && just build-ubuntu → tart clone → seed → SSH`
-  cycle has not been re-run from a clean slate.
-
-Do not consider Ubuntu "fixed" until that clean cycle completes green.
-
 ## Windows — cloud-init-equivalent path not implemented or tested
 
 The Windows pipeline produces a sysprep'd qcow2 (see

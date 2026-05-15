@@ -75,18 +75,24 @@ shows the minimum useful shape. The semantically important fields:
 
 ```yaml
 #cloud-config
-hostname: my-dev-vm
+# Quote hostname and user `name` so values that look like YAML
+# reserved words ('null', 'true', a pure digit, etc.) still parse
+# as strings — see the field-semantics block in the example yaml.
+hostname: 'my-dev-vm'
 manage_etc_hosts: true
 
 users:
-  - name: brian
+  - name: 'brian'
     groups: [sudo]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
       - ssh-ed25519 AAAA... brian@laptop
-    # Optional. mkpasswd -m sha-512 (Linux expects a hash, NOT plaintext).
-    # passwd: '$6$...'
+    # Optional. SHA-512 crypt hash, NOT plaintext. Generate with:
+    #   openssl passwd -6 'YOURPASS'        (macOS + Linux)
+    # Do NOT use python3 -c "import crypt" on macOS — Darwin's libc
+    # crypt(3) is DES-only, so METHOD_SHA512 silently returns garbage.
+    # passwd: '$6$<salt>$<hash>'
 ```
 
 The build-time `packer` user is already removed on the clone's first boot
@@ -107,21 +113,34 @@ cat > cloud-init-dir/user-data <<'EOF'
 EOF
 cat > cloud-init-dir/meta-data <<'EOF'
 instance-id: my-dev-vm-001
-local-hostname: my-dev-vm
+local-hostname: 'my-dev-vm'
 EOF
 
-hdiutil makehybrid -o /tmp/seed.iso -hfs -joliet -iso \
-  -default-volume-name cidata \
-  -joliet-volume-name cidata \
-  -hfs-volume-name cidata \
+xorriso -as mkisofs \
+  -V cidata \
+  -joliet -rock \
+  -o /tmp/seed.iso \
   ./cloud-init-dir
 
 tart clone ubuntu-24-04-arm64-base my-dev-vm
 tart run --disk=/tmp/seed.iso:ro my-dev-vm
 ```
 
+Verify the ISO has the right shape before booting:
+
+```bash
+file /tmp/seed.iso     # expect: "ISO 9660 CD-ROM filesystem data 'cidata'"
+```
+
 The volume label **must be `cidata`** (case-insensitive — `CIDATA` works
 too) — that's how cloud-init's NoCloud datasource auto-detects the seed.
+
+Earlier iterations of `seed/build-cidata.sh` used `hdiutil makehybrid`
+instead of `xorriso`. Don't do that. macOS's hybrid format prepends an
+Apple_partition_scheme + HFS+ wrapper to the ISO9660 data, which Linux's
+blkid in the guest can't see past — cloud-init then fails to find the
+seed and falls through to `DataSourceNone`. xorriso produces a flat
+ISO9660 that blkid reads cleanly.
 
 If cloud-init didn't apply (no IP, hostname unchanged), see "Debugging" at
 the bottom.
@@ -245,20 +264,31 @@ journalctl -u cloud-init -u cloud-init-local --no-pager | tail -100
 Common causes:
 
 - **Wrong volume label on the seed ISO.** Must be `cidata` (case-insensitive
-  — the script writes lowercase, but `CIDATA` works too). Verify on macOS
-  with `hdiutil imageinfo packer/ubuntu-24-04-arm64/output-seed/cidata.iso | grep -i 'Volume Name'`,
-  or `xorriso -indev <path> -toc 2>&1 | grep -i label` if you have xorriso.
+  — the script writes lowercase, but `CIDATA` works too). Verify with
+  `file packer/ubuntu-24-04-arm64/output-seed/cidata.iso` — expect
+  `ISO 9660 CD-ROM filesystem data 'cidata'`. If you see "DOS/MBR boot
+  sector" or Apple_partition_scheme references, the ISO is in the wrong
+  format and Linux blkid won't find the label.
 - **`instance-id` reused from a previous run.** cloud-init treats the
-  same `instance-id` as "already applied" and no-ops. Bump it when
+  same `instance-id` as "already applied" and no-ops. The
+  `seed/build-cidata.sh` script derives instance-id from a sha256 of the
+  seed yaml, so edits force re-application automatically; if you're
+  using the manual recipe, bump `instance-id` in `meta-data` when
   changing user-data on a VM that already booted.
 - **Seed ISO not attached read-only.** Always use `--disk=...:ro` — Tart
   treats writable attachments differently in some versions; the read-only
   hint is also a useful breadcrumb that this isn't a state volume.
-- **Cloud-init datasource lookup is wrong.** The Ubuntu base ships with
-  the stock datasource list. If you tighten it (e.g. for a clone that
-  goes air-gapped after first boot), write a `90_datasource.cfg` snippet
-  under `/etc/cloud/cloud.cfg.d/` pinning `datasource_list: [NoCloud, None]`
-  during the Packer build's provision phase.
+- **Cloud-init datasource lookup picked the wrong source.** The Ubuntu
+  base ships with `/etc/cloud/cloud.cfg.d/99-mac-vms-datasource.cfg`
+  pinning `datasource_list: [NoCloud, None]` — installed by
+  `provision/99-cleanup.sh`. If you add a clone path that uses a
+  different datasource (e.g. ConfigDrive on Proxmox), extend the list
+  there.
+- **`tart ip <vm>` returns "no IP address found" even after boot.**
+  Separate problem — Ubuntu 24.04's systemd-networkd reports a
+  DUID-based DHCP client identifier that Tart's lease-lookup doesn't
+  understand. The VM actually has an IP; you just have to find it from
+  the macOS lease database. See [`tart-ip-discovery.md`](tart-ip-discovery.md).
 
 ## Where context lives
 

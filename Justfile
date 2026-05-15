@@ -38,7 +38,7 @@ run-windows *FLAGS:
 # needing a real ISO present.
 validate:
     cd packer/ubuntu-24-04-arm64 && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso packer validate .
-    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso PKR_VAR_qemu_binary=/usr/bin/true packer validate .
+    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso PKR_VAR_virtio_win_iso_path=/tmp/fake-virtio.iso PKR_VAR_qemu_binary=/usr/bin/true packer validate .
 
 # `packer fmt -recursive` to fix formatting drift.
 fmt:

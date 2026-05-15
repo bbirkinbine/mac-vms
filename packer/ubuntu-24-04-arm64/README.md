@@ -63,8 +63,9 @@ re-application on the next boot. Detach the `--disk` flag after the
 first successful boot.
 
 See [`docs/cloning-and-cloud-init.md`](../../docs/cloning-and-cloud-init.md)
-for the full background, the manual hdiutil recipe, and debugging tips
-when cloud-init silently doesn't apply.
+for the full background, the manual xorriso recipe (if you want to
+build the cidata ISO by hand), and debugging tips when cloud-init
+silently doesn't apply.
 
 ## Distributing between machines
 
