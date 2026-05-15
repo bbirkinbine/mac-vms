@@ -31,11 +31,18 @@
 #
 # See ../../../docs/cloning-and-cloud-init.md for the full background.
 
-hostname: lab
+# Quote both `hostname` and the user `name` below. Most strings (e.g.
+# 'webhost-01', 'devbox') work unquoted too, but the moment you substitute
+# a value that collides with a YAML reserved word — 'null', 'true', 'no',
+# 'off', or a pure number — the bare form silently parses as the wrong
+# type and breaks user/hostname creation (asked once, kept the quotes for
+# everyone since). Pre-quoting in this example so a copy-and-substitute
+# pass is safe regardless of value.
+hostname: 'lab'
 manage_etc_hosts: true
 
 users:
-  - name: lab
+  - name: 'lab'        # quote — see note above 'hostname:' a few lines up
     groups: [sudo]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
