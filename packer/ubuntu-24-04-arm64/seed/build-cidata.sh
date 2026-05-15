@@ -36,14 +36,83 @@ if [[ ! -f "${USER_DATA}" ]]; then
   exit 1
 fi
 
-for c in xorriso shasum; do
-  command -v "$c" >/dev/null 2>&1 || { echo "ERROR: $c not on PATH (brew install xorriso)" >&2; exit 1; }
+for c in xorriso shasum ssh-keygen; do
+  command -v "$c" >/dev/null 2>&1 || { echo "ERROR: $c not on PATH" >&2; exit 1; }
 done
 
 mkdir -p output-seed
 
 WORK="$(mktemp -d -t cidata-build.XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
+
+# Preflight: reject pasted private keys outright. cloud-init publishes
+# whatever is under ssh_authorized_keys to ~/.ssh/authorized_keys, so a
+# private key block would land your secret on the box and (more importantly)
+# fail to authenticate you. Look for a PEM-style header anywhere in the file.
+if grep -qE -- '-----BEGIN ([A-Z0-9 ]+ )?PRIVATE KEY-----' "${USER_DATA}"; then
+  echo "ERROR: ${USER_DATA} contains a PRIVATE KEY block." >&2
+  echo "       Paste the PUBLIC key (~/.ssh/id_*.pub — a single line that" >&2
+  echo "       starts with ssh-ed25519 / ssh-rsa / ecdsa-* / sk-*) instead." >&2
+  exit 1
+fi
+
+# Preflight: validate each ssh_authorized_keys entry. Two layers of check —
+# (a) a strict token-shape check to catch things ssh-keygen silently
+# tolerates (notably a duplicated algo prefix, which ssh-keygen will read
+# and return a real fingerprint for), and (b) ssh-keygen -l as a final
+# sanity pass to catch broken base64 or unknown algorithms.
+is_ssh_algo() {
+  case "$1" in
+    ssh-rsa|ssh-ed25519|ssh-dss) return 0 ;;
+    ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) return 0 ;;
+    sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) return 0 ;;
+  esac
+  return 1
+}
+
+KEY_COUNT=0
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  key="${line}"
+  key="${key#"${key%%[![:space:]]*}"}"   # strip leading whitespace
+  key="${key#- }"
+  key="${key#\"}"; key="${key%\"}"
+  key="${key#\'}"; key="${key%\'}"
+  KEY_COUNT=$((KEY_COUNT + 1))
+
+  # Layer (a): structural sanity. A valid pubkey is `<algo> <base64> [comment...]`.
+  # Token 1 must be a known algo. Token 2 must NOT also be a known algo
+  # (that's the `ssh-ed25519 ssh-ed25519 AAAA...` duplication bug, which
+  # ssh-keygen happily accepts).
+  read -r f1 f2 _ <<< "$key" || true
+  if ! is_ssh_algo "$f1"; then
+    echo "ERROR: SSH key #${KEY_COUNT} in ${USER_DATA} doesn't start with a known algorithm:" >&2
+    echo "         ${key}" >&2
+    echo "       First token must be one of: ssh-rsa, ssh-ed25519, ecdsa-sha2-nistp{256,384,521}, sk-*@openssh.com." >&2
+    exit 1
+  fi
+  if is_ssh_algo "$f2"; then
+    echo "ERROR: SSH key #${KEY_COUNT} in ${USER_DATA} has a duplicated algorithm prefix:" >&2
+    echo "         ${key}" >&2
+    echo "       Looks like the algo name was pasted twice ('$f1 $f2 ...'). Keep just the first." >&2
+    exit 1
+  fi
+
+  # Layer (b): hand off to ssh-keygen for base64 + structural sanity.
+  printf '%s\n' "$key" > "${WORK}/key-${KEY_COUNT}.pub"
+  if ! ssh-keygen -l -f "${WORK}/key-${KEY_COUNT}.pub" >/dev/null 2>&1; then
+    echo "ERROR: invalid SSH public key in ${USER_DATA}:" >&2
+    echo "         ${key}" >&2
+    echo "       ssh-keygen rejected it. Likely causes: broken base64, copy-paste" >&2
+    echo "       line wrapping, or an unknown algorithm token." >&2
+    exit 1
+  fi
+done < <(grep -E -- '^[[:space:]]*-[[:space:]]+(ssh-(rsa|ed25519|dss)|ecdsa-sha2-|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)' "${USER_DATA}" || true)
+
+if [[ "${KEY_COUNT}" -eq 0 ]]; then
+  echo "WARN: no ssh_authorized_keys entries found in ${USER_DATA}." >&2
+  echo "      You'll need console / password login to reach the clone." >&2
+fi
 
 # meta-data is required by the NoCloud datasource. instance-id is the
 # cache key cloud-init uses to decide whether to re-run modules on subsequent
