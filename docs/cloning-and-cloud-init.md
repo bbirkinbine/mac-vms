@@ -4,8 +4,9 @@ This is the runbook for what happens **after** Packer finishes building a
 base image — how to clone it into a usable VM and how the clone gets a
 per-VM hostname, admin user, and SSH key on first boot.
 
-The sibling (private) `homelab` repo covers the same ground for Proxmox
-with `bpg/proxmox` and `cloudbase-init`. The mental model carries over;
+The sibling [`homelab`](https://github.com/bbirkinbine/homelab) repo
+covers the same ground for Proxmox with `bpg/proxmox` and
+`cloudbase-init`. The mental model carries over;
 the mechanism is different because neither Tart nor QEMU attaches a
 cloud-init drive for you. This doc handles the mac-vms-specific plumbing.
 

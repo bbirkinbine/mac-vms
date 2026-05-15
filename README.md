@@ -30,9 +30,10 @@ be cloned for downstream use; per-VM identity (hostname, admin user, SSH
 key) is injected on first boot via a cloud-init NoCloud seed — see
 [`docs/cloning-and-cloud-init.md`](docs/cloning-and-cloud-init.md).
 
-Companion to a private x86_64 `homelab` repo (Proxmox cluster). The two
-inform each other but the architectures diverge; cross-arch builds aren't
-in scope here.
+Companion to the x86_64
+[`homelab`](https://github.com/bbirkinbine/homelab) repo (Proxmox
+cluster). The two inform each other but the architectures diverge;
+cross-arch builds aren't in scope here.
 
 ## Quick start
 
