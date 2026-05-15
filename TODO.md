@@ -22,10 +22,3 @@ interactive UTM consumption path. What's missing:
 Likely current state: Windows builds, but a clone is identical to the base
 image with no per-VM identity step. Acceptable for snapshots and throwaway
 VMs, not yet at parity with the Ubuntu flow.
-
-## Tart `tart ip` discovery on Ubuntu 24.04
-
-See [`docs/tart-ip-discovery.md`](docs/tart-ip-discovery.md). Workaround is
-documented; no permanent fix has been applied. Two possible paths described
-in that doc (configure systemd-networkd ClientIdentifier=mac, or upstream
-Tart fix). Punt unless this becomes a regular annoyance.

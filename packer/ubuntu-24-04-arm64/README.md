@@ -135,6 +135,13 @@ bash -n provision/*.sh
   `99-cleanup.sh`). Without this, cloud-init probes EC2/OpenStack/etc.
   metadata endpoints every boot. If you add a clone path that delivers
   identity via a different datasource, add it to the list.
+- **DHCP client identifier is forced to MAC** via
+  `/etc/cloud/cloud.cfg.d/99-mac-vms-dhcp.cfg` (also installed by
+  `99-cleanup.sh`). Ubuntu 24.04's systemd-networkd would otherwise send
+  an RFC 4361 DUID, which macOS bootpd writes into `dhcpd_leases`'s
+  `hw_address` field, breaking Tart's lease lookup so `tart ip` returns
+  "no IP address found". Same fix Tart's own Linux base images use — see
+  [`docs/tart-ip-discovery.md`](../../docs/tart-ip-discovery.md).
 - **`packer-cleanup.service` ordering**: the deferred-user-removal unit
   sets `DefaultDependencies=no` + `Conflicts=shutdown.target` and is
   `WantedBy=sysinit.target`. Without those, systemd auto-adds

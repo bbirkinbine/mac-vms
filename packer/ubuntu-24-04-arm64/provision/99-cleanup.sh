@@ -49,6 +49,34 @@ manage_etc_hosts: true
 preserve_hostname: false
 DS_EOF
 
+echo "==> set DHCP client identifier to MAC (so 'tart ip' can find the lease)"
+# Ubuntu 24.04's systemd-networkd defaults to an RFC 4361 DUID-based DHCP
+# client identifier. macOS's bootpd writes that DUID into the lease file's
+# hw_address= field (in addition to identifier=), but Tart's `tart ip`
+# matches against the VM's 6-byte MAC, so the lookup fails and `tart ip`
+# returns "no IP address found" despite the VM being networked.
+#
+# Tart's maintainers documented the same quirk and shipped the fix in
+# their own Linux base images:
+#   https://github.com/cirruslabs/tart/issues/912
+#   https://github.com/cirruslabs/linux-image-templates/pull/39
+# Their cure is `dhcp-identifier: mac` in netplan, applied via a
+# cloud.cfg.d snippet so it survives every boot (not just first boot).
+# Match: cloud-init's default `network` config under NoCloud is "DHCP on
+# the first matching interface"; we override the identifier and leave
+# everything else default. A clone that ships its own network-config in
+# the cidata seed still wins (cloud-init merges; later sources override).
+install -m 0644 /dev/stdin /etc/cloud/cloud.cfg.d/99-mac-vms-dhcp.cfg <<'DHCP_EOF'
+network:
+  version: 2
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp4: true
+      dhcp-identifier: mac
+DHCP_EOF
+
 echo "==> apt clean (caches, lists, and pkgcache index)"
 # apt-get clean only removes downloaded .deb files in
 # /var/cache/apt/archives/. The parsed pkgcache.bin / srcpkgcache.bin
