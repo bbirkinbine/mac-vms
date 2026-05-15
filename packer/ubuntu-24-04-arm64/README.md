@@ -118,6 +118,27 @@ bash -n provision/*.sh
 
 - The `apt.primary.arches` list is `[arm64]` (different from the sibling
   `homelab` Ubuntu config, which is `[amd64]`). Don't sync that field across.
+- **Clones get a 30s cap on `systemd-networkd-wait-online`.** Ubuntu 24.04
+  ships that unit with no timeout, so an interface that fails to come online
+  on first boot would stall the boot indefinitely. `provision/99-cleanup.sh`
+  drops in `/etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf`
+  with `--any --timeout=30`. If you ever see a clone's boot pause for minutes
+  with no console activity, check `systemctl status systemd-networkd-wait-online`
+  on it first.
+- **Cloud-init datasource is locked to `[NoCloud, None]`** via
+  `/etc/cloud/cloud.cfg.d/99-mac-vms-datasource.cfg` (installed by
+  `99-cleanup.sh`). Without this, cloud-init probes EC2/OpenStack/etc.
+  metadata endpoints every boot. If you add a clone path that delivers
+  identity via a different datasource, add it to the list.
+- **`packer-cleanup.service` ordering**: the deferred-user-removal unit
+  sets `DefaultDependencies=no` + `Conflicts=shutdown.target` and is
+  `WantedBy=sysinit.target`. Without those, systemd auto-adds
+  `After=basic.target`, which combined with the explicit
+  `Before=cloud-init-local.service` forms an ordering cycle that systemd
+  silently breaks by deleting `cloud-init-local.service` — every clone
+  then falls through to `DataSourceNone` with no usable login. Don't
+  "clean up" those directives. Same lesson the sibling homelab repo
+  documents from their 2026-05-15 production incident.
 
 ## Where context lives
 
