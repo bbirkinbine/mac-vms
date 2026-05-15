@@ -10,12 +10,13 @@
 > READMEs under [`packer/*/`](packer/) are the parts most likely to be
 > useful to others.
 >
-> **In flight.** Both pipelines have been verified end-to-end on an M2 Max,
-> but the docs shape and the cloud-init / cidata seed flow for downstream
-> clones are still settling. Anything called out as "verified" in a
-> per-component README has been exercised on real hardware; the rest is
-> subject to change. Open work and known gaps live in [`TODO.md`](TODO.md).
-> Pin a commit if you depend on a snapshot.
+> **Ubuntu pipeline** is verified end-to-end on an M2 Max — clean `just
+> build-ubuntu`, clone, cidata seed, SSH in, all canary checks green
+> including `tart ip <vm>`. **Windows pipeline** builds end-to-end but
+> the per-VM identity step (the cloud-init equivalent for Windows) is
+> not yet implemented — a clone is currently identical to the base
+> image. See [`TODO.md`](TODO.md) for the open Windows gap. Pin a commit
+> if you depend on a snapshot.
 
 Reproducible **Ubuntu 24.04 ARM64** and **Windows 11 ARM64** VM images for
 Apple Silicon Macs, both built with [Packer](https://www.packer.io). Ubuntu
