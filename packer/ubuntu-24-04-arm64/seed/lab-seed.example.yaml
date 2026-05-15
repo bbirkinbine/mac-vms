@@ -10,14 +10,24 @@
 # while instance-id stays the same (cloud-init no-ops on re-runs).
 #
 # Field semantics (Linux side):
-#   - passwd: must be a SHA-512 hash, NOT plaintext. Generate with
-#       mkpasswd -m sha-512        (apt: whois package)
-#       python3 -c "import crypt; print(crypt.crypt('NEW', crypt.mksalt(crypt.METHOD_SHA512)))"
-#     Putting plaintext here will silently set the literal string as the
-#     password hash (i.e. lock you out).
+#   - passwd: must be a SHA-512 crypt hash (~110 chars, shape
+#     $6$<salt>$<hash>), NOT plaintext. Generate with:
+#       openssl passwd -6 'YOURPASS'              # macOS + Linux, no extra deps
+#       mkpasswd -m sha-512 'YOURPASS'            # Linux only; apt: whois
+#     Do NOT use `python3 -c "import crypt..."` — macOS's libc crypt(3)
+#     only implements DES, so Python's METHOD_SHA512 silently falls back
+#     and produces a ~13-char garbage string that locks the account.
+#     Plaintext here is also a lock-out: cloud-init takes it verbatim
+#     as the stored hash.
 #   - ssh_authorized_keys: list of strings; first entry is added to
 #     ~/.ssh/authorized_keys for the user.
 #   - groups: [sudo] grants passwordless sudo via the sudo: line.
+#   - YAML reserved words: if your hostname or username happens to be
+#     `null`, `true`, `false`, `yes`, `no`, `on`, `off`, or a bare number,
+#     quote it ('null' or "null") — bare YAML parses those as their
+#     reserved-value type and the field ends up as None / a bool / an int
+#     instead of the string you wanted. Any valid DNS hostname
+#     (RFC 1123: [a-zA-Z0-9-]) is fine quoted.
 #
 # See ../../../docs/cloning-and-cloud-init.md for the full background.
 

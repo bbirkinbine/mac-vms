@@ -113,8 +113,12 @@ bash -n provision/*.sh
   hash if you change the plaintext:
 
   ```bash
-  python3 -c "import crypt; print(crypt.crypt('NEWPASS', crypt.mksalt(crypt.METHOD_SHA512)))"
+  openssl passwd -6 'NEWPASS'
   ```
+
+  Note: `python3 -c "import crypt; crypt.crypt(...)"` is broken on macOS —
+  Darwin's libc only implements DES crypt, so `METHOD_SHA512` silently
+  falls back and produces a ~13-char garbage string. Use `openssl` instead.
 
 - The `apt.primary.arches` list is `[arm64]` (different from the sibling
   `homelab` Ubuntu config, which is `[amd64]`). Don't sync that field across.

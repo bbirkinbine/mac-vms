@@ -14,10 +14,15 @@
 #   tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
 #   ssh <user>@$(tart ip test-vm)
 #
-# macOS-only. Uses hdiutil (which ships with macOS) — the homelab x86
-# equivalent uses genisoimage on Linux. Same NoCloud ISO9660 output;
-# the filesystem label MUST be "cidata" (lower or upper case) for
-# cloud-init's NoCloud datasource to auto-detect it.
+# macOS-targeted but tool-portable. Uses xorriso (brew install xorriso),
+# which is already required by the Ubuntu Packer wrapper for ISO repacking.
+# Previously used hdiutil makehybrid, but that produced an Apple_partition_
+# scheme hybrid image whose ISO9660 label was hidden behind the Apple
+# partition map — Linux's blkid in the guest couldn't see LABEL=cidata,
+# and cloud-init fell through to DataSourceNone. xorriso produces a flat
+# ISO9660 + Joliet + Rock Ridge image that Linux blkid sees cleanly.
+# The filesystem label MUST be "cidata" (case-insensitive) for cloud-init's
+# NoCloud datasource to auto-detect.
 
 set -euo pipefail
 
@@ -31,8 +36,8 @@ if [[ ! -f "${USER_DATA}" ]]; then
   exit 1
 fi
 
-for c in hdiutil shasum; do
-  command -v "$c" >/dev/null 2>&1 || { echo "ERROR: $c not on PATH" >&2; exit 1; }
+for c in xorriso shasum; do
+  command -v "$c" >/dev/null 2>&1 || { echo "ERROR: $c not on PATH (brew install xorriso)" >&2; exit 1; }
 done
 
 mkdir -p output-seed
@@ -46,26 +51,35 @@ trap 'rm -rf "${WORK}"' EXIT
 # the same id (idempotent re-runs are no-ops) but edits force re-application.
 INSTANCE_ID="lab-$(shasum -a 256 "${USER_DATA}" | awk '{print substr($1,1,12)}')"
 LOCAL_HOSTNAME="$(awk '/^hostname:/ {print $2; exit}' "${USER_DATA}" | tr -d '\r' || true)"
+# Strip a single layer of surrounding single or double quotes if the user
+# wrote `hostname: 'foo'` or `hostname: "foo"` — and they have to do that
+# whenever the value collides with a YAML reserved word ('null', 'true',
+# 'no', 'off', a pure number, etc.). We accept either form.
+LOCAL_HOSTNAME="${LOCAL_HOSTNAME#\'}"; LOCAL_HOSTNAME="${LOCAL_HOSTNAME%\'}"
+LOCAL_HOSTNAME="${LOCAL_HOSTNAME#\"}"; LOCAL_HOSTNAME="${LOCAL_HOSTNAME%\"}"
 LOCAL_HOSTNAME="${LOCAL_HOSTNAME:-lab}"
 
+# Force single-quote the hostname in meta-data so it always parses as a
+# string on the guest side, regardless of what valid-DNS-hostname value
+# the user put in their seed yaml. Valid hostnames (RFC 1123:
+# [a-zA-Z0-9-] in labels) never contain a single quote, so this is safe.
 cat > "${WORK}/meta-data" <<META
 instance-id: ${INSTANCE_ID}
-local-hostname: ${LOCAL_HOSTNAME}
+local-hostname: '${LOCAL_HOSTNAME}'
 META
 
 cp "${USER_DATA}" "${WORK}/user-data"
 
 OUT="output-seed/cidata.iso"
 # Volume label MUST be cidata (case-insensitive) for NoCloud auto-detect.
-# Joliet + Rock Ridge so long filenames survive — cloud-init reads them
-# fine either way, but Joliet is the friendlier representation for human
-# inspection via diskimage browsers.
-hdiutil makehybrid -quiet \
+# -V sets the ISO9660 volume identifier; -joliet + -rock add long-filename
+# and Unix-attribute extensions. xorriso refuses to overwrite by default,
+# so drop the prior file first to make re-runs idempotent.
+rm -f "${OUT}"
+xorriso -as mkisofs \
+  -V cidata \
+  -joliet -rock \
   -o "${OUT}" \
-  -hfs -joliet -iso \
-  -default-volume-name cidata \
-  -joliet-volume-name cidata \
-  -hfs-volume-name cidata \
   "${WORK}"
 
 echo "Wrote ${OUT}"
