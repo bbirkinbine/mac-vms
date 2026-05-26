@@ -83,9 +83,35 @@ esac
 # The tart-cli builder's from_iso requires a local absolute path, not a URL.
 # Download once into packer_cache/iso/ and verify the SHA256 from the
 # upstream SHA256SUMS before handing the path to Packer.
+#
+# Kali's cdimage layout is "version-stamped filenames inside a 'current/'
+# symlinked directory" — i.e. there's no `kali-linux-current-installer-
+# arm64.iso` alias, only `kali-linux-2026.1-installer-arm64.iso`-style
+# filenames. To keep the default URL valid across point releases, when
+# the user hasn't pinned KALI_ISO_URL we parse the upstream SHA256SUMS
+# and pick the first non-netinst installer-arm64 entry.
 
-KALI_ISO_URL="${KALI_ISO_URL:-https://cdimage.kali.org/current/kali-linux-current-installer-arm64.iso}"
-KALI_ISO_SHA256SUMS_URL="${KALI_ISO_SHA256SUMS_URL:-https://cdimage.kali.org/current/SHA256SUMS}"
+KALI_ISO_BASE_URL="${KALI_ISO_BASE_URL:-https://cdimage.kali.org/current/}"
+# Normalize: ensure trailing slash for clean concatenation below.
+KALI_ISO_BASE_URL="${KALI_ISO_BASE_URL%/}/"
+KALI_ISO_SHA256SUMS_URL="${KALI_ISO_SHA256SUMS_URL:-${KALI_ISO_BASE_URL}SHA256SUMS}"
+
+if [[ -z "${KALI_ISO_URL:-}" ]]; then
+  echo "==> resolving Kali installer ISO filename from ${KALI_ISO_SHA256SUMS_URL}"
+  # Prefer the full installer (offline package set) over the netinst, which
+  # is the more conservative choice if a Kali mirror is slow during the
+  # build. The regex matches `kali-linux-<version>-installer-arm64.iso`
+  # exactly, excluding `-installer-netinst-arm64.iso` and `-live-arm64.iso`.
+  ISO_FILENAME="$(curl -fsL "${KALI_ISO_SHA256SUMS_URL}" \
+    | awk '{ sub(/^\*/, "", $2); if ($2 ~ /^kali-linux-[0-9][^ ]*-installer-arm64\.iso$/) { print $2; exit } }')"
+  if [[ -z "${ISO_FILENAME}" ]]; then
+    echo "ERROR: could not find a kali-linux-*-installer-arm64.iso entry in ${KALI_ISO_SHA256SUMS_URL}" >&2
+    echo "       Kali may have changed the filename convention. Set KALI_ISO_URL explicitly to override." >&2
+    exit 1
+  fi
+  KALI_ISO_URL="${KALI_ISO_BASE_URL}${ISO_FILENAME}"
+  echo "    selected ${ISO_FILENAME}"
+fi
 
 ISO_CACHE_DIR="${PACKER_DIR}/packer_cache/iso"
 ISO_FILENAME="$(basename "${KALI_ISO_URL}")"

@@ -137,9 +137,14 @@ bash -n provision/*.sh
     a GUI in the base.
   - `kali-linux-everything` — full mirror. Huge; don't pick unless you
     have a reason.
-- **ISO source is `cdimage.kali.org/current/`.** The `current/` symlink is
-  what gets bumped on each point release (2026.1 → 2026.2 → ...). Pin via
-  `KALI_ISO_URL` if you need reproducibility against a specific release.
+- **ISO source is `cdimage.kali.org/current/`.** The `current/` directory
+  is symlinked to each point release (2026.1 → 2026.2 → ...), but the
+  filename inside is version-stamped (`kali-linux-2026.1-installer-arm64.iso`)
+  — there's no version-less alias. By default the wrapper parses
+  `SHA256SUMS` at build time and picks the first non-netinst
+  `installer-arm64` entry, so the default tracks point releases
+  automatically. Pin `KALI_ISO_URL` to a specific filename if you need
+  reproducibility against a fixed release.
 - **`pkgsel/include` must contain `cloud-init` explicitly.** Kali's
   installer does not include cloud-init by default (unlike Ubuntu Server).
   Without it, every clone falls through to `DataSourceNone` and no
