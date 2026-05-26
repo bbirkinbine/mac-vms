@@ -241,8 +241,4 @@ echo "==> packer validate"
 packer validate .
 
 echo "==> packer build"
-# -force overwrites any prior ~/.tart/vms/<vm_name> from a failed or
-# earlier attempt — the artifact is throwaway here, and forcing the
-# overwrite keeps the iteration loop free of "tart delete X &&
-# just build-kali" cycles.
-exec packer build -force -on-error=ask .
+exec packer build -on-error=ask .
