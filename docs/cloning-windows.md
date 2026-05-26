@@ -1,5 +1,18 @@
 # Cloning the Windows base image and creating a per-VM identity
 
+> ## Status: work in progress, untested
+>
+> This runbook is **not verified end-to-end** as of 2026-05-26. The
+> Packer build produces a sysprep'd qcow2 (verified), but the
+> downstream clone + OOBE-mini consumption flow described below has
+> not been walked through cleanly in this revision of the repo and
+> parts of it are likely broken or out of date. Per-VM identity
+> injection (cidata-equivalent for Windows) is not implemented at all
+> — see [`../TODO.md`](../TODO.md). The Linux pipelines
+> ([`cloning-ubuntu.md`](cloning-ubuntu.md),
+> [`cloning-kali.md`](cloning-kali.md)) are the working reference;
+> use one of those if you need a reliable per-VM identity flow.
+
 This is the runbook for what happens **after** `just build-windows`
 finishes — how to consume the sysprep'd qcow2 and get a usable VM.
 
