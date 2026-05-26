@@ -12,15 +12,18 @@
 >
 > **Ubuntu pipeline** is verified end-to-end on an M2 Max — clean `just
 > build-ubuntu`, clone, cidata seed, SSH in, all canary checks green
-> including `tart ip <vm>`. **Windows pipeline** builds end-to-end but
-> the per-VM identity step (the cloud-init equivalent for Windows) is
-> not yet implemented — a clone is currently identical to the base
-> image. See [`TODO.md`](TODO.md) for the open Windows gap. Pin a commit
-> if you depend on a snapshot.
+> including `tart ip <vm>`. **Kali pipeline** lands here as a sibling of
+> Ubuntu and has not yet been verified end-to-end against a real ISO
+> download. **Windows pipeline** builds end-to-end but the per-VM
+> identity step (the cloud-init equivalent for Windows) is not yet
+> implemented — a clone is currently identical to the base image. See
+> [`TODO.md`](TODO.md) for the open Windows gap. Pin a commit if you
+> depend on a snapshot.
 
-Reproducible **Ubuntu 24.04 ARM64** and **Windows 11 ARM64** VM images for
-Apple Silicon Macs, both built with [Packer](https://www.packer.io). Ubuntu
-runs under [Tart](https://github.com/cirruslabs/tart) (Apple
+Reproducible **Ubuntu 24.04 ARM64**, **Kali rolling ARM64**, and **Windows
+11 ARM64** VM images for Apple Silicon Macs, all built with
+[Packer](https://www.packer.io). Ubuntu and Kali run under
+[Tart](https://github.com/cirruslabs/tart) (Apple
 Virtualization.framework). Windows runs under QEMU + `swtpm` because AVF
 doesn't expose TPM 2.0 or UEFI Secure Boot to non-macOS guests, and ARM
 WinPE can't read the AVF virtio buses — see
@@ -48,6 +51,7 @@ Then:
 
 ```bash
 just build-ubuntu          # ~6 min — Tart image at ~/.tart/vms/ubuntu-24-04-arm64-base
+just build-kali            # Tart image at ~/.tart/vms/kali-rolling-arm64-base
 just build-windows         # ~16 min — qcow2 in packer/windows-11-arm64/output-windows-11-arm64/
 ```
 
@@ -55,7 +59,11 @@ Per-pipeline detail (prerequisites, env vars, post-build run/clone) lives
 in the per-OS READMEs:
 
 - [`packer/ubuntu-24-04-arm64/README.md`](packer/ubuntu-24-04-arm64/README.md)
+- [`packer/kali-rolling-arm64/README.md`](packer/kali-rolling-arm64/README.md)
 - [`packer/windows-11-arm64/README.md`](packer/windows-11-arm64/README.md)
+
+The Ubuntu and Kali pipelines share most of their shape; see
+[`docs/kali-vs-ubuntu.md`](docs/kali-vs-ubuntu.md) for the diff.
 
 ## Repository layout
 

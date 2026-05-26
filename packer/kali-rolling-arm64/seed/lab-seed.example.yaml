@@ -1,0 +1,57 @@
+#cloud-config
+# Lab seed for ad-hoc Kali VMs cloned from kali-rolling-arm64-base.
+#
+# Copy this file to seed/lab-seed.yaml (gitignored), fill in your credentials,
+# then run ./seed/build-cidata.sh to produce ./output-seed/cidata.iso. Pass
+# that to `tart run --disk=<path>:ro <vm>` on first boot — cloud-init reads
+# it via the NoCloud datasource and applies everything below.
+#
+# After first boot you can drop the --disk flag; the seed is only consulted
+# while instance-id stays the same (cloud-init no-ops on re-runs).
+#
+# Field semantics (Linux side):
+#   - passwd: must be a SHA-512 crypt hash (~110 chars, shape
+#     $6$<salt>$<hash>), NOT plaintext. Generate with:
+#       openssl passwd -6 'YOURPASS'              # macOS + Linux, no extra deps
+#       mkpasswd -m sha-512 'YOURPASS'            # Linux only; apt: whois
+#     Do NOT use `python3 -c "import crypt..."` — macOS's libc crypt(3)
+#     only implements DES, so Python's METHOD_SHA512 silently falls back
+#     and produces a ~13-char garbage string that locks the account.
+#     Plaintext here is also a lock-out: cloud-init takes it verbatim
+#     as the stored hash.
+#   - ssh_authorized_keys: list of strings; first entry is added to
+#     ~/.ssh/authorized_keys for the user.
+#   - groups: [sudo] grants passwordless sudo via the sudo: line.
+#   - YAML reserved words: if your hostname or username happens to be
+#     `null`, `true`, `false`, `yes`, `no`, `on`, `off`, or a bare number,
+#     quote it ('null' or "null") — bare YAML parses those as their
+#     reserved-value type and the field ends up as None / a bool / an int
+#     instead of the string you wanted. Any valid DNS hostname
+#     (RFC 1123: [a-zA-Z0-9-]) is fine quoted.
+#
+# See ../../../docs/cloning-and-cloud-init.md for the full background.
+
+# Quote both `hostname` and the user `name` below. Most strings (e.g.
+# 'kali-box-01', 'recon') work unquoted too, but the moment you substitute
+# a value that collides with a YAML reserved word — 'null', 'true', 'no',
+# 'off', or a pure number — the bare form silently parses as the wrong
+# type and breaks user/hostname creation. Pre-quoting in this example so
+# a copy-and-substitute pass is safe regardless of value.
+hostname: 'kali-lab'
+manage_etc_hosts: true
+
+users:
+  - name: 'kali'       # quote — see note above 'hostname:' a few lines up
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    # Optional. Comment out to make this an SSH-key-only account.
+    # Generate the hash with:
+    #   openssl passwd -6 'YOURPASS'
+    # and paste the full ~110-char output (starts '$6$<salt>$') between
+    # the quotes below. See the header note for why python3 -c "import
+    # crypt" silently produces garbage on macOS.
+    # passwd: '$6$REPLACE-WITH-SHA512-HASH'
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA...replace-with-your-pubkey... user@host
