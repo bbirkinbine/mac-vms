@@ -30,8 +30,12 @@ WinPE can't read the AVF virtio buses — see
 [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) §1 for
 the full analysis. Each pipeline outputs a versioned base image meant to
 be cloned for downstream use; per-VM identity (hostname, admin user, SSH
-key) is injected on first boot via a cloud-init NoCloud seed — see
-[`docs/cloning-and-cloud-init.md`](docs/cloning-and-cloud-init.md).
+key) is injected on first boot via a cloud-init NoCloud seed on the
+Linux side, or interactively via OOBE-mini on Windows. Per-OS clone
+runbooks:
+[`cloning-ubuntu.md`](docs/cloning-ubuntu.md),
+[`cloning-kali.md`](docs/cloning-kali.md),
+[`cloning-windows.md`](docs/cloning-windows.md).
 
 Companion to the x86_64
 [`homelab`](https://github.com/bbirkinbine/homelab) repo (Proxmox

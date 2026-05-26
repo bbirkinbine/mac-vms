@@ -38,7 +38,7 @@ echo "==> lock cloud-init datasource to NoCloud"
 # Without this, cloud-init probes EC2/OpenStack/etc. metadata endpoints
 # on every boot (~90-120s wasted) before falling back. Tart clones
 # receive identity via a NoCloud cidata ISO attached at clone time (see
-# docs/cloning-and-cloud-init.md); ConfigDrive isn't used here, so the
+# docs/cloning-ubuntu.md); ConfigDrive isn't used here, so the
 # list is [NoCloud, None] — homelab's [NoCloud, ConfigDrive, None] is
 # Proxmox-specific. None terminates the search instead of falling
 # through to network sources. manage_etc_hosts + preserve_hostname=false

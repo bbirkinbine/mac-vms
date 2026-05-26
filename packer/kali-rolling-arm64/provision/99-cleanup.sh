@@ -55,7 +55,7 @@ echo "==> lock cloud-init datasource to NoCloud"
 # Without this, cloud-init probes EC2/OpenStack/etc. metadata endpoints
 # on every boot (~90-120s wasted) before falling back. Tart clones
 # receive identity via a NoCloud cidata ISO attached at clone time (see
-# docs/cloning-and-cloud-init.md); the list is [NoCloud, None]. None
+# docs/cloning-kali.md); the list is [NoCloud, None]. None
 # terminates the search instead of falling through to network sources.
 # manage_etc_hosts + preserve_hostname=false let the seed's hostname
 # directive land in /etc/hosts on first boot.

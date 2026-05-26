@@ -82,10 +82,11 @@ yaml so identical seeds are no-ops on re-runs and edits force
 re-application on the next boot. Detach the `--disk` flag after the
 first successful boot.
 
-See [`docs/cloning-and-cloud-init.md`](../../docs/cloning-and-cloud-init.md)
-for the full background, the manual xorriso recipe (if you want to
-build the cidata ISO by hand), and debugging tips when cloud-init
-silently doesn't apply. The mechanism is identical to the Ubuntu pipeline.
+See [`docs/cloning-kali.md`](../../docs/cloning-kali.md) for the full
+background, the manual xorriso recipe (if you want to build the cidata
+ISO by hand), Kali-specific notes (sshd-enable, systemd-networkd, the
+Kali meta-pkg in the base), and debugging tips when cloud-init silently
+doesn't apply.
 
 ## Distributing between machines
 

@@ -361,7 +361,7 @@ build-kali` line to the quick-start.
 
 ### `docs/kali-vs-ubuntu.md`
 
-Short doc — half the length of `docs/cloning-and-cloud-init.md`.
+Short doc — half the length of `docs/cloning-ubuntu.md`.
 Required sections:
 
 - **Why two pipelines.** Both produce ARM64 Linux base images for

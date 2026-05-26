@@ -13,7 +13,7 @@ interactive UTM consumption path. What's missing:
   injection (hostname, admin user, RDP credentials) is not implemented.
 - The intended mechanism — `cloudbase-init` (Windows analogue of cloud-init)
   reading a NoCloud-shaped seed disk — is referenced in
-  [`docs/cloning-and-cloud-init.md`](docs/cloning-and-cloud-init.md) but the
+  [`docs/cloning-windows.md`](docs/cloning-windows.md) but the
   provisioner stub at
   [`packer/windows-11-arm64/provision/30-cloudbase-init.ps1`](packer/windows-11-arm64/provision/30-cloudbase-init.ps1)
   isn't fleshed out.

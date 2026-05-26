@@ -165,5 +165,7 @@ for those. Recommended only if the Packer build is broken or unavailable.
 - [`../packer/windows-11-arm64/README.md`](../packer/windows-11-arm64/README.md)
   — the Packer build that produces the qcow2.
 - [`../CLAUDE.md`](../CLAUDE.md) — project context and tool-choice rationale.
-- [`cloning-and-cloud-init.md`](cloning-and-cloud-init.md) — sibling doc for
-  the Ubuntu Tart cloning path.
+- [`cloning-windows.md`](cloning-windows.md) — Windows clone + OOBE-mini flow.
+- [`cloning-ubuntu.md`](cloning-ubuntu.md) and
+  [`cloning-kali.md`](cloning-kali.md) — sibling docs for the Linux
+  Tart cloning paths (cloud-init NoCloud seed).
