@@ -28,11 +28,14 @@ on first boot via the NoCloud datasource (volume label `cidata`).
 ```bash
 cd packer/kali-rolling-arm64
 
-# 1. Copy the example seed, fill in your SSH key (and optionally a password hash).
+# 1. Copy the example seed. You can usually skip editing it — build-cidata.sh
+#    auto-injects every ~/.ssh/id_*.pub on the host. Edit only if you want a
+#    non-default hostname, username, or password hash.
 cp seed/lab-seed.example.yaml seed/lab-seed.yaml
-${EDITOR:-vim} seed/lab-seed.yaml
 
 # 2. Build the cidata.iso (volume label "cidata", contains user-data + meta-data).
+#    By default, auto-injects ~/.ssh/id_*.pub. Pass `-i <key>.pub` (repeatable)
+#    to use an explicit set instead.
 ./seed/build-cidata.sh
 
 # 3. Clone the base and boot with the seed attached.
@@ -72,8 +75,11 @@ users:
     groups: [sudo]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
-    ssh_authorized_keys:
-      - ssh-ed25519 AAAA... brian@laptop
+    # SSH pubkeys: build-cidata.sh auto-injects ~/.ssh/id_*.pub by
+    # default (deduped against anything explicit here). Pass
+    # -i <path>.pub to use an explicit set instead. Leave as `[]`
+    # to delegate entirely to auto-detect or -i.
+    ssh_authorized_keys: []
     # Optional. SHA-512 crypt hash, NOT plaintext. Generate with:
     #   openssl passwd -6 'YOURPASS'        (macOS + Linux)
     # Do NOT use python3 -c "import crypt" on macOS — Darwin's libc
@@ -85,6 +91,38 @@ The build-time `packer` user is already removed on the clone's first
 boot by a systemd one-shot installed at image-build time (see
 [`packer/kali-rolling-arm64/provision/99-cleanup.sh`](../packer/kali-rolling-arm64/provision/99-cleanup.sh)).
 You don't need to clean it up from your cloud-init.
+
+## Choosing which SSH keys land on the clone
+
+`build-cidata.sh` merges keys from three sources, in priority order:
+
+1. **Anything you list explicitly under `ssh_authorized_keys:` in the
+   yaml.** Always included.
+2. **`-i <path>.pub` arguments to `build-cidata.sh` (repeatable).**
+   Validated like any other key. Passing any `-i` **suppresses
+   step 3** — be explicit when you want to be.
+3. **Default: every `~/.ssh/id_*.pub` on the host.** Auto-detected
+   when no `-i` is passed.
+
+All three paths run the same validation pipeline: reject
+`-----BEGIN ... PRIVATE KEY-----` blocks, reject paths not ending in
+`.pub`, `ssh-keygen -l` sanity check, dedupe by `<algo> <base64>`.
+
+```bash
+./seed/build-cidata.sh                                 # auto-detect ~/.ssh
+./seed/build-cidata.sh -i ~/.ssh/work.pub              # explicit, suppresses auto
+./seed/build-cidata.sh -i k1.pub -i k2.pub             # multiple explicit
+./seed/build-cidata.sh -h                              # usage
+```
+
+Per-source breakdown printed before xorriso:
+
+```text
+==> SSH key sources beyond seed/lab-seed.yaml: auto-detected from /Users/you/.ssh/
+    + id_ed25519.pub SHA256:... (ED25519)
+    = id_rsa.pub (already present in seed/lab-seed.yaml — skipped)
+==> SSH keys in user-data: 2 (yaml: 1, injected: 1)
+```
 
 ## Kali-specific notes
 

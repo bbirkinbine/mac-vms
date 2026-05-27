@@ -53,5 +53,13 @@ users:
     # the quotes below. See the header note for why python3 -c "import
     # crypt" silently produces garbage on macOS.
     # passwd: '$6$REPLACE-WITH-SHA512-HASH'
-    ssh_authorized_keys:
-      - ssh-ed25519 AAAA...replace-with-your-pubkey... user@host
+    #
+    # SSH pubkeys: by default, build-cidata.sh auto-injects every
+    # ~/.ssh/id_*.pub on the host (after PEM-content + ssh-keygen
+    # validation), deduplicating against anything already listed here.
+    # Pass `-i <path>.pub` to build-cidata.sh (repeatable) to use an
+    # explicit set instead — that suppresses auto-detect.
+    # Add explicit entries here only if you want keys NOT in ~/.ssh.
+    ssh_authorized_keys: []
+    # ssh_authorized_keys:
+    #   - ssh-ed25519 AAAA... user@host
