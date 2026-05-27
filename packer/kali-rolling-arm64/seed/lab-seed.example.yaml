@@ -37,7 +37,7 @@
 # 'off', or a pure number — the bare form silently parses as the wrong
 # type and breaks user/hostname creation. Pre-quoting in this example so
 # a copy-and-substitute pass is safe regardless of value.
-hostname: 'kali-lab'
+hostname: 'kali'
 manage_etc_hosts: true
 
 users:

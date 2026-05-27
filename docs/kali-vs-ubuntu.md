@@ -27,7 +27,8 @@ is the only non-trivial port.
   `Before=cloud-init-local.service`) are identical.
 - **Per-VM identity**: `seed/build-cidata.sh` builds a NoCloud cidata.iso
   attached via `tart run --disk=…:ro <vm>`. The script is distro-agnostic
-  beyond the example yaml's default hostname (`lab` → `kali-lab`).
+  beyond the example yaml's default hostname (`ubuntu` → `kali`) and
+  default username (also `ubuntu` → `kali`).
 - **Build-time credentials**: same `packer` / `packer-build-only` build
   user, same SHA-512 crypt hash. The cleanup one-shot deletes the user
   on first boot of any clone.
