@@ -40,15 +40,18 @@ cd "$(dirname "$0")/.."
 # ---- argument parsing -------------------------------------------------------
 
 USER_DATA=""
+OUTPUT_PATH=""
 declare -a EXPLICIT_KEY_FILES=()
 
 usage() {
   cat <<USAGE
-Usage: $0 [-i <ssh-pubkey-path>]... [user-data.yaml]
+Usage: $0 [-i <ssh-pubkey-path>]... [-o <output.iso>] [user-data.yaml]
 
   -i <path>    SSH public key file to inject into the cidata user-data's
                ssh_authorized_keys. Repeatable. Passing any -i suppresses
                the auto-detect of ~/.ssh/id_*.pub — be explicit.
+  -o <path>    Output ISO path. Default: ./output-seed/cidata.iso.
+               Used by scripts/spawn-vm.sh to write per-VM cidata files.
   -h, --help   This message.
 
   user-data.yaml  Optional positional argument; default seed/lab-seed.yaml.
@@ -57,6 +60,7 @@ Examples:
   $0
   $0 -i ~/.ssh/id_ed25519.pub
   $0 -i lab-key.pub -i ops-key.pub seed/lab-seed.yaml
+  $0 -o /tmp/vm-3.iso /tmp/vm-3.yaml
 USAGE
 }
 
@@ -66,6 +70,12 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -eq 0 ]] && { echo "ERROR: -i requires a path argument" >&2; exit 1; }
       EXPLICIT_KEY_FILES+=("$1")
+      shift
+      ;;
+    -o)
+      shift
+      [[ $# -eq 0 ]] && { echo "ERROR: -o requires a path argument" >&2; exit 1; }
+      OUTPUT_PATH="$1"
       shift
       ;;
     -h|--help)
@@ -101,7 +111,16 @@ for c in xorriso shasum ssh-keygen; do
   command -v "$c" >/dev/null 2>&1 || { echo "ERROR: $c not on PATH" >&2; exit 1; }
 done
 
-mkdir -p output-seed
+# Resolve output path. -o wins (absolute or relative); else default to
+# the per-pipeline output-seed/cidata.iso (relative to script's cwd,
+# which is the packer/<distro>/ directory thanks to the cd above).
+if [[ -n "${OUTPUT_PATH}" ]]; then
+  OUT="${OUTPUT_PATH}"
+  mkdir -p "$(dirname "${OUT}")"
+else
+  OUT="output-seed/cidata.iso"
+  mkdir -p output-seed
+fi
 
 WORK="$(mktemp -d -t cidata-build.XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -358,7 +377,6 @@ fi
 
 # ---- xorriso ----------------------------------------------------------------
 
-OUT="output-seed/cidata.iso"
 # Volume label MUST be cidata (case-insensitive) for NoCloud auto-detect.
 # -V sets the ISO9660 volume identifier; -joliet + -rock add long-filename
 # and Unix-attribute extensions. xorriso refuses to overwrite by default,
@@ -370,11 +388,18 @@ xorriso -as mkisofs \
   -o "${OUT}" \
   "${WORK}"
 
-echo "Wrote ${OUT}"
-echo "  instance-id:   ${INSTANCE_ID}"
+# Absolute paths print as-is; relative paths get $(pwd) prepended so
+# the user can copy-paste the `tart run --disk=` line verbatim.
+case "${OUT}" in
+  /*) OUT_ABS="${OUT}" ;;
+   *) OUT_ABS="$(pwd)/${OUT}" ;;
+esac
+
+echo "Wrote ${OUT_ABS}"
+echo "  instance-id:    ${INSTANCE_ID}"
 echo "  local-hostname: ${LOCAL_HOSTNAME}"
 echo
 echo "Next:"
 echo "  tart clone ubuntu-24-04-arm64-base test-vm"
-echo "  tart run --disk=$(pwd)/${OUT}:ro test-vm    # detach after first boot"
+echo "  tart run --disk=${OUT_ABS}:ro test-vm    # detach after first boot"
 echo "  ssh <user-from-yaml>@\$(tart ip test-vm)"

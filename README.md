@@ -55,8 +55,20 @@ Then:
 
 ```bash
 just build-ubuntu          # ~6 min — Tart image at ~/.tart/vms/ubuntu-24-04-arm64-base
-just build-kali            # Tart image at ~/.tart/vms/kali-rolling-arm64-base
+just build-kali            # ~7 min — Tart image at ~/.tart/vms/kali-rolling-arm64-base
 just build-windows         # ~16 min — qcow2 in packer/windows-11-arm64/output-windows-11-arm64/
+```
+
+After the base image is built, spawn throwaway test VMs from it in
+seconds. Each spawn auto-generates a per-VM cidata seed (hostname =
+VM name, user = distro, SSH keys from `~/.ssh/id_*.pub`), clones the
+base, and boots headless in the background:
+
+```bash
+just spawn ubuntu              # ubuntu-N for next free N
+just spawn kali -c 3           # batch: kali-N, kali-N+1, kali-N+2
+just spawn ubuntu -n webhost   # explicit name
+just cleanup-vms ubuntu        # stop + delete every ubuntu-* clone
 ```
 
 Per-pipeline detail (prerequisites, env vars, post-build run/clone) lives

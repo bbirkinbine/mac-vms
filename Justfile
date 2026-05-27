@@ -25,6 +25,25 @@ build-kali:
 build-windows:
     @./scripts/build-windows.sh
 
+# --- spawn / cleanup ---------------------------------------------------------
+
+# Spawn one or more ubuntu/kali clones from the corresponding base image.
+# Default: spawn one VM, auto-named `<distro>-N` for the next free N. Pass
+# extra args verbatim to scripts/spawn-vm.sh: -c <count>, -n <name>, -i
+# <pubkey-path>. Examples:
+#   just spawn ubuntu                # ubuntu-<N>
+#   just spawn kali -c 3             # kali-<N>, kali-<N+1>, kali-<N+2>
+#   just spawn ubuntu -n webhost     # explicit name; no iteration
+spawn distro *FLAGS:
+    @./scripts/spawn-vm.sh {{distro}} {{FLAGS}}
+
+# Stop + delete every `<distro>-*` clone (excluding the canonical base
+# image). Interactive confirmation; pass -y to skip, --dry-run to preview.
+# Named one-offs (spawn-vm.sh -n) are NOT matched; delete those manually
+# with `tart delete <name>`.
+cleanup-vms distro *FLAGS:
+    @./scripts/cleanup-vms.sh {{distro}} {{FLAGS}}
+
 # Boot the built Windows qcow2 directly under qemu-system-aarch64 with the
 # same TPM + EFI + ramfb + USB plumbing the build used. Probes whether the
 # artifact is good without UTM in the way. Defaults to a COW clone so the

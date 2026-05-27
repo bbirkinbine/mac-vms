@@ -23,7 +23,42 @@ hand it to the guest. You build a small seed ISO; cloud-init inside the
 guest discovers it on first boot via the NoCloud datasource (volume
 label `cidata`).
 
-## Quick start (test VM in three commands)
+## Quick start — `just spawn ubuntu`
+
+The fastest path is the spawn wrapper:
+
+```bash
+just spawn ubuntu             # spawns ubuntu-N for next free N, headless background
+just spawn ubuntu -c 3        # batch: ubuntu-N, ubuntu-N+1, ubuntu-N+2
+just spawn ubuntu -n webhost  # explicit name (no auto-iteration)
+```
+
+Output gives you the SSH command per VM:
+
+```text
+==> spawned 1 VM(s):
+  ubuntu-1 → ssh ubuntu@192.168.64.27
+```
+
+Behind the scenes [`scripts/spawn-vm.sh`](../scripts/spawn-vm.sh):
+generates a per-VM cidata.iso with hostname = the VM name and user =
+`ubuntu`, auto-injects your `~/.ssh/id_*.pub`, clones the base, and
+launches `tart run --no-graphics` in the background. Per-VM logs land
+at `packer/ubuntu-24-04-arm64/output-seed/<name>.log`.
+
+Teardown:
+
+```bash
+just cleanup-vms ubuntu            # interactive confirm, then delete all ubuntu-*
+just cleanup-vms ubuntu --dry-run  # preview, no deletion
+just cleanup-vms ubuntu -y         # skip the prompt
+tart delete <name>                 # one-off, e.g. for an explicit-name spawn
+```
+
+## Manual path (without spawn-vm.sh)
+
+If you'd rather drive each step yourself — useful when iterating on
+the cidata yaml or debugging cloud-init:
 
 ```bash
 cd packer/ubuntu-24-04-arm64
