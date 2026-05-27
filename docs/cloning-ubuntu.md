@@ -47,10 +47,10 @@ tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
 Then in another terminal:
 
 ```bash
-ssh lab@$(tart ip test-vm)
+ssh ubuntu@$(tart ip test-vm)
 ```
 
-(The `lab` user is what the example yaml creates — change
+(The `ubuntu` user is what the example yaml creates — change
 `users[0].name` in `seed/lab-seed.yaml` to use a different login.)
 
 After the first successful boot you can drop the `--disk` flag — the

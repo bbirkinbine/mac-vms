@@ -38,11 +38,11 @@
 # type and breaks user/hostname creation (asked once, kept the quotes for
 # everyone since). Pre-quoting in this example so a copy-and-substitute
 # pass is safe regardless of value.
-hostname: 'lab'
+hostname: 'ubuntu-lab'
 manage_etc_hosts: true
 
 users:
-  - name: 'lab'        # quote — see note above 'hostname:' a few lines up
+  - name: 'ubuntu'     # quote — see note above 'hostname:' a few lines up
     groups: [sudo]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL

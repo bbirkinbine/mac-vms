@@ -277,7 +277,7 @@ LOCAL_HOSTNAME="$(awk '/^hostname:/ {print $2; exit}' "${USER_DATA}" | tr -d '\r
 # 'no', 'off', a pure number, etc.). We accept either form.
 LOCAL_HOSTNAME="${LOCAL_HOSTNAME#\'}"; LOCAL_HOSTNAME="${LOCAL_HOSTNAME%\'}"
 LOCAL_HOSTNAME="${LOCAL_HOSTNAME#\"}"; LOCAL_HOSTNAME="${LOCAL_HOSTNAME%\"}"
-LOCAL_HOSTNAME="${LOCAL_HOSTNAME:-lab}"
+LOCAL_HOSTNAME="${LOCAL_HOSTNAME:-ubuntu-lab}"
 
 # Force single-quote the hostname in meta-data so it always parses as a
 # string on the guest side, regardless of what valid-DNS-hostname value
