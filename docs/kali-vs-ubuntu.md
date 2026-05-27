@@ -62,6 +62,20 @@ is the only non-trivial port.
 - **ISO source**: `cdimage.kali.org/current/` (a symlink bumped on each
   point release) vs `cdimage.ubuntu.com/releases/24.04/release/` (a
   fixed point release).
+- **Network manager in the installed base**: Ubuntu inherits whatever
+  subiquity writes (netplan + systemd-networkd). Kali's installer would
+  default to ifupdown — except Kali rolling dropped `isc-dhcp-client`
+  from the standard task, and d-i writes `/etc/network/interfaces` for
+  `enp0s1` while the installed kernel renames the interface to `eth0`.
+  The Kali preseed's `late_command` drops a systemd-networkd
+  `[Match] Name=en* eth*` config and disables `networking`. See
+  [`kali-build-attempts.md`](kali-build-attempts.md) wall 3 for the
+  diagnostic story.
+- **Sshd default state**: Ubuntu Server's `openssh-server.postinst`
+  auto-enables on install. Kali ships `ssh.service` with
+  `preset: disabled` (pentest distro default). The Kali preseed's
+  `late_command` runs `systemctl enable ssh` so clones come up with
+  sshd listening; without this, packer's SSH provisioner times out.
 
 ## The translation table
 

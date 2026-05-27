@@ -6,7 +6,7 @@
 
 ## What this repo is
 
-Infrastructure-as-code for building reproducible **Ubuntu 24.04 ARM64** and **Windows 11 ARM64** VM images that run on Apple Silicon MacBooks. The output is a versioned image artifact per OS that can be launched on demand for development, testing, and throwaway experiments.
+Infrastructure-as-code for building reproducible **Ubuntu 24.04 ARM64**, **Kali rolling ARM64**, and **Windows 11 ARM64** VM images that run on Apple Silicon MacBooks. The output is a versioned image artifact per OS that can be launched on demand — or batch-spawned via `just spawn <distro>` — for development, testing, and throwaway experiments.
 
 Companion to the x86_64 `homelab` repo (Proxmox cluster + Packer templates). That repo's design decisions inform this one but the architecture is different (ARM64, no shared cluster storage, no Terraform/OpenTofu layer, no per-role VM tree).
 
@@ -25,7 +25,8 @@ These are the calls I've already made. Don't relitigate them in the scaffolding 
 ### Use
 
 - **Packer** for image builds. Same shape as the `homelab` repo's `packer/*/` directories — HCL sources, a `provision/` directory for post-install scripts, an env-driven wrapper script per target.
-- **Tart** (`cirruslabs/tart`) as the Ubuntu builder + runtime. ARM-native, uses Apple's Virtualization.framework, has a first-class Packer plugin (`packer-plugin-tart`). Produces versioned VM images that `tart run` launches directly. Designed for CI but works locally.
+- **Tart** (`cirruslabs/tart`) as the Linux builder + runtime (Ubuntu and Kali both). ARM-native, uses Apple's Virtualization.framework, has a first-class Packer plugin (`packer-plugin-tart`). Produces versioned VM images that `tart run` launches directly. Designed for CI but works locally.
+- **subiquity (Ubuntu) and Debian Installer preseed (Kali)** as the OS-side autoinstall mechanism. The Ubuntu `http/user-data` is cloud-init-shaped; Kali's `http/preseed.cfg` is debconf-shaped — see [`docs/kali-vs-ubuntu.md`](docs/kali-vs-ubuntu.md) for the translation table and the Kali-specific gotchas the build hit (`docs/kali-build-attempts.md`).
 - **Packer's `qemu` source + `qemu-system-aarch64` + `swtpm`** as the Windows builder. Tart can't host Windows — not just because of TPM/Secure Boot (the original blocker) but also because Apple Virtualization.framework only exposes virtio buses to non-macOS guests and ARM Win11 WinPE has no in-box virtio-blk driver, so the install can't read the boot media. QEMU sidesteps both via `swtpm` for TPM 2.0, `edk2` for UEFI, and a wrapper script that rewrites `media=cdrom` drives to `usb-storage` form so WinPE's in-box xHCI stack can read them. Output is a qcow2; see [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) for the full diagnostic history.
 - **UTM** as the interactive front-end for the Windows qcow2 the Packer build produces. UTM ships TPM 2.0 and Secure Boot natively and is the right tool for snapshot/clone management of an installed Windows VM.
 
@@ -45,6 +46,14 @@ These are the calls I've already made. Don't relitigate them in the scaffolding 
 ---
 
 ## Initial scaffolding ask
+
+> **Historical.** This section captured the up-front design for the
+> original two pipelines (Ubuntu, Windows). All three pipelines
+> (Ubuntu, Kali, Windows) are now built and structurally in place;
+> the Kali pipeline was added later following the same shape — see
+> [`docs/kali-build-attempts.md`](docs/kali-build-attempts.md) for
+> the retrospective. Kept here as reference context for what the
+> shape of "a pipeline in this repo" looks like.
 
 When the user kicks off scaffolding, produce the following in one pass. Stop and confirm before generating any provisioner scripts longer than ~30 lines, or before adding a second builder source per OS.
 
@@ -152,12 +161,20 @@ The user validates reproducibility by re-running the build themselves on a clean
 
 ---
 
-## Decision history (read this before touching the Windows pipeline)
+## Decision history (read these before touching the Windows or Kali pipelines)
 
-The Windows pipeline went through several pivots before reaching the
-current working shape. Before making changes there, read
-[`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) — it
-captures, in chronological order:
+Both the Windows pipeline and the Kali pipeline went through several
+walls before reaching their current shape. Before changing either,
+read the matching attempt log:
+
+- [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md)
+  — Windows: five walls (CD-ROM bus, USB enum, HW-requirements
+  bypass, NetBIOS name length, sysprep exit code).
+- [`docs/kali-build-attempts.md`](docs/kali-build-attempts.md) — Kali:
+  three walls (ISO filename discovery + EFI confusion, pkgsel
+  suite-pinning, post-install systemd-networkd switch + sshd enable).
+
+The Windows doc captures, in chronological order:
 
 - Why Tart can't host Win11 — three layered blockers (no Windows VM configuration in Tart's source, no TPM in Apple Virtualization.framework, AVF only exposes virtio buses to non-macOS guests and ARM WinPE has no in-box viostor).
 - Why the Tart `vm_base_name` shortcut doesn't apply (no prebuilt Windows base from cirruslabs).
@@ -167,7 +184,7 @@ captures, in chronological order:
 - USB enumeration order — the install ISO's usb-storage device must precede virtio-win.iso's so EDK2 auto-boots the right device.
 - The five-wall closing diagnostic (2026-05-13): CD-ROM bus → USB enum order → Win11 hardware-requirements check (LabConfig bypass in unattend) → NetBIOS computer-name 15-char cap → sysprep WinRM-disconnect exit code 16001.
 
-Build is verified end-to-end as of 2026-05-13: ~16 min wall-clock on M2 Max producing a sysprep'd qcow2 in `packer/windows-11-arm64/output-windows-11-arm64/`. The Ubuntu side has no equivalent decision-history doc because it works end-to-end with no significant pivots.
+Build is verified end-to-end as of 2026-05-13: ~16 min wall-clock on M2 Max producing a sysprep'd qcow2 in `packer/windows-11-arm64/output-windows-11-arm64/`. The Ubuntu side has no equivalent decision-history doc because it works end-to-end with no significant pivots; Kali had three walls and a separate retrospective at [`docs/kali-build-attempts.md`](docs/kali-build-attempts.md).
 
 ---
 

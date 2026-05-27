@@ -1,46 +1,24 @@
 # mac-vms
 
-> ## Status
->
-> Published as a personal-lab reference, not an actively maintained product.
-> Issues and PRs are welcome but won't get fast turnaround. The
-> [`docs/`](docs/) runbooks — especially
-> [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md), the
-> diagnostic history of the Windows ARM64 install — and the per-component
-> READMEs under [`packer/*/`](packer/) are the parts most likely to be
-> useful to others.
->
-> **Ubuntu pipeline** is verified end-to-end on an M2 Max — clean `just
-> build-ubuntu`, clone, cidata seed, SSH in, all canary checks green
-> including `tart ip <vm>`. **Kali pipeline** lands here as a sibling of
-> Ubuntu and has not yet been verified end-to-end against a real ISO
-> download. **Windows pipeline** builds end-to-end but the per-VM
-> identity step (the cloud-init equivalent for Windows) is not yet
-> implemented — a clone is currently identical to the base image. See
-> [`TODO.md`](TODO.md) for the open Windows gap. Pin a commit if you
-> depend on a snapshot.
+> **Status.** Personal-lab reference, not an actively maintained product.
+> Issues and PRs welcome but won't get fast turnaround. Per-pipeline
+> status (verified end-to-end, builds-but-untested, etc.) lives at the
+> top of each pipeline's README — check there before depending on a
+> snapshot, and pin a commit if you do.
 
-Reproducible **Ubuntu 24.04 ARM64**, **Kali rolling ARM64**, and **Windows
-11 ARM64** VM images for Apple Silicon Macs, all built with
-[Packer](https://www.packer.io). Ubuntu and Kali run under
+Reproducible **Ubuntu 24.04 ARM64**, **Kali rolling ARM64**, and
+**Windows 11 ARM64** VM images for Apple Silicon Macs. All built with
+[Packer](https://www.packer.io); the Linux pipelines run under
 [Tart](https://github.com/cirruslabs/tart) (Apple
-Virtualization.framework). Windows runs under QEMU + `swtpm` because AVF
-doesn't expose TPM 2.0 or UEFI Secure Boot to non-macOS guests, and ARM
-WinPE can't read the AVF virtio buses — see
-[`docs/windows-build-attempts.md`](docs/windows-build-attempts.md) §1 for
-the full analysis. Each pipeline outputs a versioned base image meant to
-be cloned for downstream use; per-VM identity (hostname, admin user, SSH
-key) is injected on first boot via a cloud-init NoCloud seed on the
-Linux side, or interactively via OOBE-mini on Windows. Per-OS clone
-runbooks:
-[`cloning-ubuntu.md`](docs/cloning-ubuntu.md),
-[`cloning-kali.md`](docs/cloning-kali.md),
-[`cloning-windows.md`](docs/cloning-windows.md).
+Virtualization.framework), Windows runs under QEMU + `swtpm` (Tart
+can't host Windows on ARM — TPM/Secure Boot, plus a virtio-bus issue
+documented in [`docs/windows-build-attempts.md`](docs/windows-build-attempts.md)).
+Each pipeline outputs a versioned base image designed to be cloned
+for downstream use.
 
 Companion to the x86_64
 [`homelab`](https://github.com/bbirkinbine/homelab) repo (Proxmox
-cluster). The two inform each other but the architectures diverge;
-cross-arch builds aren't in scope here.
+cluster).
 
 ## Quick start
 
@@ -51,46 +29,37 @@ brew install --cask tart
 brew install packer just xorriso qemu swtpm
 ```
 
-Then:
+Build a base image, then spawn throwaway clones from it:
 
 ```bash
-just build-ubuntu          # ~6 min — Tart image at ~/.tart/vms/ubuntu-24-04-arm64-base
-just build-kali            # ~7 min — Tart image at ~/.tart/vms/kali-rolling-arm64-base
-just build-windows         # ~16 min — qcow2 in packer/windows-11-arm64/output-windows-11-arm64/
+just build-ubuntu              # or: build-kali, build-windows
+just spawn ubuntu              # or: spawn kali; -c <N> for batches
+just cleanup-vms ubuntu        # stop + delete every <distro>-* clone
 ```
 
-After the base image is built, spawn throwaway test VMs from it in
-seconds. Each spawn auto-generates a per-VM cidata seed (hostname =
-VM name, user = distro, SSH keys from `~/.ssh/id_*.pub`), clones the
-base, and boots headless in the background:
-
-```bash
-just spawn ubuntu              # ubuntu-N for next free N
-just spawn kali -c 3           # batch: kali-N, kali-N+1, kali-N+2
-just spawn ubuntu -n webhost   # explicit name
-just cleanup-vms ubuntu        # stop + delete every ubuntu-* clone
-```
-
-Per-pipeline detail (prerequisites, env vars, post-build run/clone) lives
-in the per-OS READMEs:
+`just` with no args lists every recipe. Per-pipeline detail
+(prerequisites, env vars, build status, gotchas) lives in the per-OS
+READMEs:
 
 - [`packer/ubuntu-24-04-arm64/README.md`](packer/ubuntu-24-04-arm64/README.md)
 - [`packer/kali-rolling-arm64/README.md`](packer/kali-rolling-arm64/README.md)
 - [`packer/windows-11-arm64/README.md`](packer/windows-11-arm64/README.md)
 
-The Ubuntu and Kali pipelines share most of their shape; see
-[`docs/kali-vs-ubuntu.md`](docs/kali-vs-ubuntu.md) for the diff.
+Per-VM identity (hostname, admin user, SSH key) is injected on first
+boot via a cloud-init NoCloud seed on Linux, or interactively via
+OOBE-mini on Windows. Per-OS clone runbooks:
+[Ubuntu](docs/cloning-ubuntu.md), [Kali](docs/cloning-kali.md),
+[Windows](docs/cloning-windows.md).
 
 ## Repository layout
 
 - [`packer/`](packer/) — one Packer config per pipeline.
-- [`scripts/`](scripts/) — env-driven wrappers called by the Justfile.
-- [`docs/`](docs/) — operator runbooks (cloning, Windows build history,
-  UTM consumption, Tart IP-discovery quirk).
-- [`Justfile`](Justfile) — top-level orchestration (`just build-ubuntu`,
-  `just validate`, `just clean`).
+- [`scripts/`](scripts/) — env-driven wrappers called by the Justfile
+  (`build-*`, `spawn-vm`, `cleanup-vms`).
+- [`docs/`](docs/) — operator runbooks (cloning per OS, build-attempt
+  retrospectives, Tart IP-discovery quirk, UTM consumption).
+- [`Justfile`](Justfile) — top-level orchestration.
 - [`CLAUDE.md`](CLAUDE.md) — project context and tool-choice rationale.
-  Read before suggesting structural changes.
 - [`TODO.md`](TODO.md) — open work and known gaps.
 
 ## Acknowledgements

@@ -1,9 +1,11 @@
-# `tart ip` discovery on Ubuntu 24.04 clones
+# `tart ip` discovery on Linux clones (Ubuntu, Kali)
 
 ## Background
 
-Ubuntu 24.04's `systemd-networkd` defaults to sending an RFC 4361 DUID-based
-DHCP client identifier (option 61). macOS's `bootpd` (the vmnet DHCP server)
+Both the Ubuntu and Kali pipelines run `systemd-networkd` on the
+installed system, and `systemd-networkd` defaults to sending an
+RFC 4361 DUID-based DHCP client identifier (option 61). macOS's `bootpd`
+(the vmnet DHCP server)
 records each lease in `/var/db/dhcpd_leases` with a `hw_address` field that's
 supposed to be the guest's MAC, but in practice macOS puts the DHCP client
 identifier verbatim into both `identifier=` *and* `hw_address=`. With a
@@ -28,8 +30,11 @@ for Tart's own fix in their official Linux base images.
 
 ## What this repo does about it
 
-[`packer/ubuntu-24-04-arm64/provision/99-cleanup.sh`](../packer/ubuntu-24-04-arm64/provision/99-cleanup.sh)
-installs `/etc/cloud/cloud.cfg.d/99-mac-vms-dhcp.cfg` into the base image:
+Both pipelines'
+`99-cleanup.sh`
+([Ubuntu](../packer/ubuntu-24-04-arm64/provision/99-cleanup.sh) /
+[Kali](../packer/kali-rolling-arm64/provision/99-cleanup.sh)) install
+`/etc/cloud/cloud.cfg.d/99-mac-vms-dhcp.cfg` into the base image:
 
 ```yaml
 network:
@@ -60,7 +65,7 @@ preferences, etc.) still wins.
 Most likely cause now: the image predates this fix. Rebuild:
 
 ```bash
-just clean && just build-ubuntu
+just clean && just build-ubuntu     # or: just build-kali
 ```
 
 …or if you're consuming a base image you didn't build yourself (e.g. a

@@ -1,5 +1,15 @@
 # Kali rolling ARM64 base image
 
+> **Status (2026-05-26): verified end-to-end on M2 Max.**
+> `just build-kali` produces the sealed image in ~7m30s wall-clock,
+> and `just spawn kali` smoke-tested the clone + cidata + SSH-in
+> flow successfully. The closing diagnostic session resolved three
+> walls (ISO filename discovery + EFI confusion, pkgsel suite
+> pinning, post-install systemd-networkd/sshd-enable) — captured in
+> [`../../docs/kali-build-attempts.md`](../../docs/kali-build-attempts.md).
+> Read that doc before changing anything in this directory; the
+> obvious-looking moves have already been ruled out.
+
 Packer config that produces `kali-rolling-arm64-base` in `~/.tart/vms/`. Boots
 the Kali rolling ARM64 installer ISO under Tart, runs Debian Installer in
 preseed mode against the `http/preseed.cfg` config, then runs a minimal
@@ -63,30 +73,21 @@ Build-time credentials (smoke test only — see warning below):
 > produce a bootable image?" smoke test on the base. Real per-VM access
 > comes from the cidata seed below.
 
-The base image is intended to be **cloned** for downstream use rather than
-logged into directly. The fast path for a per-VM identity (hostname, user,
-SSH key) uses `seed/build-cidata.sh`:
+The base image is intended to be **cloned** for downstream use rather
+than logged into directly. Fastest path:
 
 ```bash
-cp seed/lab-seed.example.yaml seed/lab-seed.yaml   # then edit
-./seed/build-cidata.sh                              # writes output-seed/cidata.iso
-
-tart clone kali-rolling-arm64-base test-vm
-tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
-ssh <user-from-yaml>@$(tart ip test-vm)
+just spawn kali              # kali-N for next free N
+just spawn kali -c 3         # batch of three
+just cleanup-vms kali        # tear down all kali-* clones
 ```
 
-`seed/lab-seed.yaml` is gitignored; only the `.example.yaml` template is
-tracked. The script derives a stable `instance-id` from a hash of the
-yaml so identical seeds are no-ops on re-runs and edits force
-re-application on the next boot. Detach the `--disk` flag after the
-first successful boot.
-
-See [`docs/cloning-kali.md`](../../docs/cloning-kali.md) for the full
-background, the manual xorriso recipe (if you want to build the cidata
-ISO by hand), Kali-specific notes (sshd-enable, systemd-networkd, the
-Kali meta-pkg in the base), and debugging tips when cloud-init silently
-doesn't apply.
+`just spawn` generates a per-VM cidata.iso (hostname = VM name, user =
+`kali`, SSH keys auto-injected from `~/.ssh/id_*.pub`), `tart clone`s
+the base, and boots headless in the background. Full cloning runbook
+(mental model, manual recipe, Kali-specific notes — sshd-enable,
+systemd-networkd, the Kali meta-pkg, debugging when cloud-init silently
+doesn't apply): [`docs/cloning-kali.md`](../../docs/cloning-kali.md).
 
 ## Distributing between machines
 

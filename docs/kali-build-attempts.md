@@ -7,13 +7,12 @@
 > [`../packer/kali-rolling-arm64/`](../packer/kali-rolling-arm64/) —
 > most of the obvious-looking moves have already been explored.
 >
-> **Status (2026-05-26): green for the Packer build, pending for the
-> clone flow.** `just build-kali` produces a sealed
-> `kali-rolling-arm64-base` Tart image in ~7m30s wall-clock on M2 Max.
-> The cidata-driven clone + SSH-in flow described in
-> [`cloning-kali.md`](cloning-kali.md) has **not been walked through
-> end-to-end yet** — same shape as the Ubuntu pipeline so it should
-> work, but treat that as the next verification step.
+> **Status (2026-05-26): green, verified end-to-end.**
+> `just build-kali` produces a sealed `kali-rolling-arm64-base` Tart
+> image in ~7m30s wall-clock on M2 Max. The cidata-driven clone +
+> SSH-in flow is also verified — `just spawn kali` smoke-tests
+> `tart clone` + per-VM cidata generation + `tart run` headless +
+> SSH-in as the cidata-seeded user, end-to-end.
 >
 > The closing diagnostic session resolved three distinct walls in
 > sequence, each gated on fixing the previous one. In order:
@@ -347,14 +346,15 @@ provisioners + fstrim.
   deferred `packer-cleanup.service` one-shot.
 - Final fstrim reclaims unused blocks.
 - Graceful shutdown; build returns success.
+- **Clone-and-spawn (added post-build).** `just spawn kali` clones the
+  base, generates per-VM cidata with hostname = VM name + user `kali`,
+  auto-injects `~/.ssh/id_*.pub`, boots headless. SSH-in as the
+  cidata-seeded user verified at `192.168.64.<n>` within ~30s of
+  spawn. `just cleanup-vms kali` removes clones cleanly; base image
+  is preserved.
 
 ## Open work
 
-- **End-to-end cidata clone flow.** The repo's "Validation gates"
-  third bullet (`tart clone` + cidata seed + SSH-in as the
-  cidata-seeded user) has not been walked through against the
-  freshly-built base yet. Same mechanism as Ubuntu so it should work;
-  treat as the next verification.
 - **postgresql log truncate noise.** Non-fatal `Permission denied` on
   `/var/log/postgresql/postgresql-18-main.log` during
   `99-cleanup.sh`'s log-truncate pass. `kali-linux-headless` pulls in
@@ -363,7 +363,7 @@ provisioners + fstrim.
   fix would be to `lsattr` + `chattr -i` before truncate, or just
   silence the stderr for this specific path.
 - **`tart push` distribution.** Same gap as the Ubuntu pipeline; not
-  Kali-specific.
+  Kali-specific. Tracked in [`../TODO.md`](../TODO.md).
 
 ---
 

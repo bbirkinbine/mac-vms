@@ -1,5 +1,11 @@
 # Ubuntu 24.04 ARM64 base image
 
+> **Status: verified end-to-end on M2 Max.** `just build-ubuntu`
+> produces the sealed image in ~6 min wall-clock. Clone, cidata seed
+> attachment, and SSH-in flow are all green, including `tart ip <vm>`
+> (DHCP-by-MAC override applied). The Ubuntu pipeline is the most
+> stable of the three and the reference for the Kali sibling.
+
 Packer config that produces `ubuntu-24-04-arm64-base` in `~/.tart/vms/`. Boots
 the Ubuntu Server 24.04 ARM64 live ISO under Tart, runs subiquity in
 autoinstall mode against the `http/user-data` config, then runs a minimal
@@ -60,29 +66,20 @@ Build-time credentials (smoke test only — see warning below):
 > produce a bootable image?" smoke test on the base. Real per-VM access
 > comes from the cidata seed below.
 
-The base image is intended to be **cloned** for downstream use rather than
-logged into directly. The fast path for a per-VM identity (hostname, user,
-SSH key) uses `seed/build-cidata.sh`:
+The base image is intended to be **cloned** for downstream use rather
+than logged into directly. Fastest path:
 
 ```bash
-cp seed/lab-seed.example.yaml seed/lab-seed.yaml   # then edit
-./seed/build-cidata.sh                              # writes output-seed/cidata.iso
-
-tart clone ubuntu-24-04-arm64-base test-vm
-tart run --disk=$(pwd)/output-seed/cidata.iso:ro test-vm
-ssh <user-from-yaml>@$(tart ip test-vm)
+just spawn ubuntu             # ubuntu-N for next free N
+just spawn ubuntu -c 3        # batch of three
+just cleanup-vms ubuntu       # tear down all ubuntu-* clones
 ```
 
-`seed/lab-seed.yaml` is gitignored; only the `.example.yaml` template is
-tracked. The script derives a stable `instance-id` from a hash of the
-yaml so identical seeds are no-ops on re-runs and edits force
-re-application on the next boot. Detach the `--disk` flag after the
-first successful boot.
-
-See [`docs/cloning-ubuntu.md`](../../docs/cloning-ubuntu.md) for the
-full background, the manual xorriso recipe (if you want to build the
-cidata ISO by hand), and debugging tips when cloud-init silently
-doesn't apply.
+`just spawn` generates a per-VM cidata.iso (hostname = VM name, user =
+`ubuntu`, SSH keys auto-injected from `~/.ssh/id_*.pub`), `tart clone`s
+the base, and boots headless in the background. Full cloning runbook
+(mental model, manual recipe, debugging when cloud-init silently
+doesn't apply): [`docs/cloning-ubuntu.md`](../../docs/cloning-ubuntu.md).
 
 ## Distributing between machines
 
