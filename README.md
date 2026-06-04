@@ -29,13 +29,26 @@ brew install --cask tart
 brew install packer just xorriso qemu swtpm
 ```
 
-Build a base image, then spawn throwaway clones from it:
+Build a base image once; after that, `just spawn` launches throwaway
+clones on demand — no rebuild needed to fire one up. Spawn and cleanup
+are Linux-only (Ubuntu, Kali):
 
 ```bash
-just build-ubuntu              # or: build-kali, build-windows
+just build-ubuntu              # or: build-kali   (build once)
 just spawn ubuntu              # or: spawn kali; -c <N> for batches
 just cleanup-vms ubuntu        # stop + delete every <distro>-* clone
 ```
+
+**Already have a base image and just want a VM to test on?** Skip the
+build — `just spawn <distro>` is the whole happy path for a Linux test
+VM.
+
+**Windows is build-only today.** `just build-windows` produces a
+sysprep'd qcow2, but there is no spawn / clone-and-seed path — per-VM
+identity injection isn't implemented yet ([TODO.md](TODO.md)). Consume
+the built image interactively in UTM
+([`docs/windows-utm.md`](docs/windows-utm.md)); the clone runbook tracks
+the gap ([`docs/cloning-windows.md`](docs/cloning-windows.md)).
 
 `just` with no args lists every recipe. Per-pipeline detail
 (prerequisites, env vars, build status, gotchas) lives in the per-OS
@@ -45,9 +58,10 @@ READMEs:
 - [`packer/kali-rolling-arm64/README.md`](packer/kali-rolling-arm64/README.md)
 - [`packer/windows-11-arm64/README.md`](packer/windows-11-arm64/README.md)
 
-Per-VM identity (hostname, admin user, SSH key) is injected on first
-boot via a cloud-init NoCloud seed on Linux, or interactively via
-OOBE-mini on Windows. Per-OS clone runbooks:
+On Linux, per-VM identity (hostname, admin user, SSH key) is injected
+on first boot via a cloud-init NoCloud seed — handled automatically by
+`just spawn`. Windows has no automated seed flow yet; identity is set
+interactively through OOBE at first boot. Per-OS clone runbooks:
 [Ubuntu](docs/cloning-ubuntu.md), [Kali](docs/cloning-kali.md),
 [Windows](docs/cloning-windows.md).
 
