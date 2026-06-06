@@ -135,7 +135,16 @@ build {
   //   30 — install FirstBootSeed: ARM-native per-VM identity injection from
   //        an attached seed CD (cloudbase-init has no ARM64 build)
   //   99 — install PackerBuildCleanup scheduled task + sysprep generalize
+  //
+  // elevated_user/elevated_password: run each script via a scheduled task
+  // with a full elevated token, not the bare WinRM network logon. DISM
+  // online servicing (Add-WindowsCapability for OpenSSH.Server in 20-*)
+  // returns "Access is denied" under a plain WinRM token even as
+  // Administrator — it needs the elevated token. Matches the homelab
+  // Windows base, which sets this on both provisioner blocks.
   provisioner "powershell" {
+    elevated_user     = var.build_username
+    elevated_password = var.build_password
     scripts = [
       "provision/00-wait-for-winrm.ps1",
       "provision/15-windows-cleanup.ps1",
@@ -160,7 +169,9 @@ build {
   //             confirmed to have initiated shutdown before the
   //             disconnect. Treat as success.
   provisioner "powershell" {
-    scripts          = ["provision/99-sysprep.ps1"]
-    valid_exit_codes = [0, 1, 2300218, 16001]
+    elevated_user     = var.build_username
+    elevated_password = var.build_password
+    scripts           = ["provision/99-sysprep.ps1"]
+    valid_exit_codes  = [0, 1, 2300218, 16001]
   }
 }
