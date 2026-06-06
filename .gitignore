@@ -16,6 +16,11 @@ crash.*.log
 output-*/
 *.tart
 
+# Windows runtime state: run-windows COW disk + spawn-windows fleet
+# instances. Deliberately OUTSIDE the Packer output_directory so a rebuild
+# (or `just clean`, which wipes output-*/) never destroys a running clone.
+packer/*/run/
+
 # virtio-win ARM64 driver staging tree, extracted from virtio-win.iso at
 # build time by scripts/build-windows.sh. The drivers/ directory itself is
 # tracked (with .gitkeep + README.md) so cd_files paths resolve at packer-

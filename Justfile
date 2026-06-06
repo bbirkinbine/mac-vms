@@ -89,7 +89,7 @@ run-windows *FLAGS:
 validate:
     cd packer/ubuntu-24-04-arm64 && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso packer validate .
     cd packer/kali-rolling-arm64 && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso packer validate .
-    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso PKR_VAR_virtio_win_iso_path=/tmp/fake-virtio.iso PKR_VAR_qemu_binary=/usr/bin/true packer validate .
+    cd packer/windows-11-arm64   && packer init . && packer fmt -check . && PKR_VAR_iso_path=/tmp/fake.iso PKR_VAR_virtio_win_iso_path=/tmp/fake-virtio.iso PKR_VAR_qemu_binary=/usr/bin/true PKR_VAR_output_directory=/tmp/pkr-validate-windows-out packer validate .
 
 [doc('packer fmt -recursive (fix HCL formatting drift)')]
 fmt:
@@ -134,7 +134,7 @@ delete name:
     #!/usr/bin/env bash
     set -euo pipefail
     name='{{name}}'
-    if [[ -d "packer/windows-11-arm64/output-windows-11-arm64/instances/${name}" ]]; then
+    if [[ -d "packer/windows-11-arm64/run/instances/${name}" ]]; then
         ./scripts/cleanup-windows-vms.sh -n "${name}" -y
     elif tart list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "${name}"; then
         tart delete "${name}"

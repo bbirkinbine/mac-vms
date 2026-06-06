@@ -9,7 +9,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/output-windows-11-arm64/instances"
+INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/run/instances"
 
 echo "Windows instances (qemu):"
 

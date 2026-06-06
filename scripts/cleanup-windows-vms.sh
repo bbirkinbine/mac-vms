@@ -3,7 +3,7 @@
 # scripts/spawn-windows.sh. Sibling of cleanup-vms.sh (which is Tart/Linux).
 #
 # For each instance under
-# packer/windows-11-arm64/output-windows-11-arm64/instances/<name>/ it kills
+# packer/windows-11-arm64/run/instances/<name>/ it kills
 # the qemu and swtpm processes (from their pidfiles), removes the swtpm
 # socket, deletes the instance directory, and prunes the instance's password
 # line from .env.windows-vms.
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/output-windows-11-arm64/instances"
+INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/run/instances"
 ENV_FILE="${REPO_ROOT}/.env.windows-vms"
 
 DRY_RUN=false

@@ -35,7 +35,9 @@ PIPELINE_DIR="${REPO_ROOT}/packer/windows-11-arm64"
 OUTPUT_DIR="${PIPELINE_DIR}/output-windows-11-arm64"
 BASE_QCOW2="${OUTPUT_DIR}/windows-11-arm64-base.qcow2"
 BASE_EFIVARS="${OUTPUT_DIR}/efivars.fd"
-INSTANCES_DIR="${OUTPUT_DIR}/instances"
+# Instances live under run/, NOT the Packer output dir, so `just build-windows`
+# (which clears output-*) can't destroy a running fleet.
+INSTANCES_DIR="${PIPELINE_DIR}/run/instances"
 ENV_FILE="${REPO_ROOT}/.env.windows-vms"
 EFI_CODE="/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 

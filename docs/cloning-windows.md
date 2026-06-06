@@ -193,9 +193,10 @@ just cleanup-vms windows                 # same teardown via the unified verb
 ```
 
 Per-instance state (disk, NVRAM, cidata, pidfiles, logs, `meta`) lives
-under `packer/windows-11-arm64/output-windows-11-arm64/instances/<name>/`
-(gitignored). VMs run headless; attach a VNC viewer to
-`127.0.0.1:<5900+display>` to watch one boot.
+under `packer/windows-11-arm64/run/instances/<name>/` (gitignored) —
+deliberately outside the Packer `output-*/` dir so `just build-windows`
+(which clears it) never destroys a running clone. VMs run headless;
+attach a VNC viewer to `127.0.0.1:<5900+display>` to watch one boot.
 
 ## Fallback: interactive account creation (no seed)
 

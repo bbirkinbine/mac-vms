@@ -30,6 +30,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR="${REPO_ROOT}/packer/windows-11-arm64/output-windows-11-arm64"
+# Runtime state (COW + NVRAM) lives in run/, OUTSIDE the Packer output dir,
+# so `just build-windows` (which clears output-*) doesn't blow it away.
+RUN_DIR="${REPO_ROOT}/packer/windows-11-arm64/run"
 
 BASE_QCOW2="${OUTPUT_DIR}/windows-11-arm64-base.qcow2"
 BASE_EFIVARS="${OUTPUT_DIR}/efivars.fd"
@@ -105,8 +108,9 @@ case "$mode" in
     echo "        to restore a clean OOBE-first-boot experience."
     ;;
   fresh|cow)
-    QCOW2="${OUTPUT_DIR}/run.qcow2"
-    EFIVARS="${OUTPUT_DIR}/run-vars.fd"
+    mkdir -p "${RUN_DIR}"
+    QCOW2="${RUN_DIR}/run.qcow2"
+    EFIVARS="${RUN_DIR}/run-vars.fd"
     if [[ "$mode" == "fresh" ]]; then
       echo "==> mode: fresh (wiping COW + NVRAM)"
       rm -f "${QCOW2}" "${EFIVARS}"

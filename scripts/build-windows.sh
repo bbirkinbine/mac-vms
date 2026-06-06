@@ -258,6 +258,16 @@ echo "==> virtio-win driver ISO: ${VIRTIO_WIN_ISO_PATH##*/}"
 
 cd "${PACKER_DIR}"
 
+# Packer's qemu builder refuses to run (it errors even at validate) if the
+# output_directory already exists. A rebuild replaces the prior base, so
+# clear it. Runtime state (run-windows COW, spawn-windows fleet instances)
+# lives under ./run/, NOT here, so this never touches a running clone.
+OUTPUT_DIR="output-windows-11-arm64"
+if [[ -d "${OUTPUT_DIR}" ]]; then
+  echo "==> removing prior build output ${OUTPUT_DIR}/ (rebuilding the base)"
+  rm -rf "${OUTPUT_DIR}"
+fi
+
 echo "==> xmllint Autounattend.xml"
 xmllint --noout Autounattend.xml
 
