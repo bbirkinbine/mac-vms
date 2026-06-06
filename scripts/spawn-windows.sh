@@ -8,8 +8,8 @@
 # the manager. Each instance gets its own:
 #   - COW disk + NVRAM (the base qcow2 stays sysprep-fresh),
 #   - seed CD (hostname = instance name, user 'admin', auto-injected
-#     ~/.ssh/id_*.pub, a generated password written to .env.windows-vms — not
-#     stdout, via build-cidata.sh --env),
+#     ~/.ssh/id_*.pub, a generated password written to ~/.env.windows-vms —
+#     not stdout, via build-cidata.sh --env),
 #   - networking: by default qemu user-mode NAT with per-instance host-port
 #     forwards (SSH 2222+, RDP 13389+) — no privileges needed. With --bridged
 #     each VM instead gets its OWN IP via macOS vmnet (reachable on the normal
@@ -42,7 +42,7 @@ BASE_EFIVARS="${OUTPUT_DIR}/efivars.fd"
 # Instances live under run/, NOT the Packer output dir, so `just build-windows`
 # (which clears output-*) can't destroy a running fleet.
 INSTANCES_DIR="${PIPELINE_DIR}/run/instances"
-ENV_FILE="${REPO_ROOT}/.env.windows-vms"
+ENV_FILE="${HOME}/.env.windows-vms"
 EFI_CODE="/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 
 SSH_BASE=2222
@@ -294,7 +294,9 @@ echo "==> spawned ${#SPAWNED_LINES[@]} Windows instance(s):"
 for line in "${SPAWNED_LINES[@]}"; do echo "$line"; done
 echo
 echo "First boot runs mini-setup + FirstBootSeed; SSH/RDP come up in a few minutes."
-echo "admin passwords were written to ${ENV_FILE}"
+echo
+echo "admin passwords:  ${ENV_FILE}"
+echo "  (one WINVM_<NAME>_PASSWORD line per VM, appended; key login also works.)"
 echo "Per-instance state + logs: ${INSTANCES_DIR}/<name>/"
 echo "Teardown: just cleanup-windows-vms   (or scripts/cleanup-windows-vms.sh)"
 

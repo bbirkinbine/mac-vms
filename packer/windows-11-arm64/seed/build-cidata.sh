@@ -24,7 +24,7 @@
 #   ./seed/build-cidata.sh -i ~/.ssh/foo.pub        # explicit pubkey, suppresses auto-detect
 #   ./seed/build-cidata.sh -o /tmp/vm.iso seed.json # custom output path
 #   ./seed/build-cidata.sh --env                    # write a generated password to
-#                                                   #   .env.windows-vms instead of stdout
+#                                                   #   ~/.env.windows-vms instead of stdout
 #   ./seed/build-cidata.sh --env=/path/.env.vms     # ... to a specific file
 #
 # Output: output-cidata/cidata.iso (default) or the -o path.
@@ -44,10 +44,11 @@ set -euo pipefail
 # Operate from the pipeline directory (this script lives in seed/).
 cd "$(dirname "$0")/.."
 
-REPO_ROOT="$(cd ../.. && pwd)"
 DEFAULT_USERNAME="admin"
 DEFAULT_HOSTNAME="windows"
-DEFAULT_ENV_FILE="${REPO_ROOT}/.env.windows-vms"
+# Generated passwords are recorded outside the repo tree (matches keeping
+# secrets in $HOME, never in a checkout) — see --env.
+DEFAULT_ENV_FILE="${HOME}/.env.windows-vms"
 
 # ---- argument parsing -------------------------------------------------------
 

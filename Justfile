@@ -53,7 +53,7 @@ cleanup-vms distro *FLAGS:
 # Backing recipe for `just spawn windows` — use that; this is [private] (hidden
 # from `just --list`) but still callable. Spawns Windows 11 clones from the base
 # qcow2, each headless under qemu with its own COW disk, seed CD, and
-# SSH/RDP/VNC ports. Generated admin passwords go to .env.windows-vms, not stdout.
+# SSH/RDP/VNC ports. Generated admin passwords go to ~/.env.windows-vms, not stdout.
 #   just spawn windows               # windows-<N>
 #   just spawn windows -c 3          # three at once
 #   just spawn windows -n devbox     # explicit name

@@ -54,4 +54,4 @@ for d in "${INSTANCES_DIR}"/*/; do
 done
 
 echo
-echo "Passwords: ${REPO_ROOT}/.env.windows-vms   (key login also works)"
+echo "Passwords: ${HOME}/.env.windows-vms   (key login also works)"

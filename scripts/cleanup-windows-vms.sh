@@ -6,7 +6,7 @@
 # packer/windows-11-arm64/run/instances/<name>/ it kills
 # the qemu and swtpm processes (from their pidfiles), removes the swtpm
 # socket, deletes the instance directory, and prunes the instance's password
-# line from .env.windows-vms.
+# line from ~/.env.windows-vms.
 #
 # Usage:
 #   ./scripts/cleanup-windows-vms.sh                 # interactive confirm, all instances
@@ -19,7 +19,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/run/instances"
-ENV_FILE="${REPO_ROOT}/.env.windows-vms"
+ENV_FILE="${HOME}/.env.windows-vms"
 
 DRY_RUN=false
 YES=false

@@ -98,7 +98,7 @@ window so you can watch first boot. No OOBE clicking, no manual qemu flags:
 ```bash
 just spawn windows               # boots windows-1 (a window opens)
 just list-windows                # show it + its forwarded SSH/RDP ports
-ssh admin@127.0.0.1 -p 2222      # log in by key (RDP password in .env.windows-vms)
+ssh admin@127.0.0.1 -p 2222      # log in by key (RDP password in ~/.env.windows-vms)
 just delete windows-1            # tear it down when done
 ```
 

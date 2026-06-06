@@ -131,12 +131,14 @@ just spawn windows --seed packer/windows-11-arm64/seed/lab-seed.json   # base se
 
 Each instance gets its own COW disk + NVRAM (the base qcow2 stays
 sysprep-fresh), a seed CD with `hostname = instance name` and user
-`admin`, and its generated admin password appended to `.env.windows-vms`
-(gitignored) — spawn passes `build-cidata.sh --env`, so passwords never
-hit stdout:
+`admin`, and its generated admin password **appended** to
+`~/.env.windows-vms` — kept in `$HOME`, outside the repo tree, `chmod 600`.
+Spawn passes `build-cidata.sh --env`, so passwords never hit stdout. Each
+spawn appends one line (it never overwrites); `cleanup`/`delete` prunes a
+VM's line and removes the file once empty:
 
 ```bash
-# .env.windows-vms
+# ~/.env.windows-vms
 WINVM_WINDOWS_1_PASSWORD='...'
 WINVM_WINDOWS_2_PASSWORD='...'
 ```
@@ -160,7 +162,7 @@ A host port binds once, so the VMs can't share `:22` — hence the offsets.
 to an auto-picked host port.) After first boot (a few minutes):
 
 ```bash
-ssh admin@127.0.0.1 -p 2222      # windows-1   (key login; password in .env.windows-vms for RDP)
+ssh admin@127.0.0.1 -p 2222      # windows-1   (key login; password in ~/.env.windows-vms for RDP)
 ssh admin@127.0.0.1 -p 2223      # windows-2
 ```
 
