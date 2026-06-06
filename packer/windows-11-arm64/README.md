@@ -83,10 +83,37 @@ mostly Windows Setup itself.
 
 `./output-windows-11-arm64/windows-11-arm64-base.qcow2` — the sysprep'd
 qcow2 disk image. ~12-15 GB typical after sysprep cleanup. Boots into
-OOBE-mini on first run; the `PackerBuildCleanup` scheduled task rotates +
-disables the build Administrator account before networking comes up.
+OOBE-mini on first run; on first boot the `FirstBootSeed` task injects a
+per-VM login from an attached seed CD and `PackerBuildCleanup` then
+rotates + disables the build Administrator account (only once a seed login
+exists — otherwise it's left active for recovery).
 
-## Consuming the output
+## Running a clone (the easy path)
+
+After a build, the quickest way to a usable VM is the spawn flow — it
+clones the qcow2, **injects a per-VM login** (user `admin`, your
+`~/.ssh/id_*.pub`, and a generated password) and boots it headless under
+qemu. No OOBE clicking, no manual qemu flags:
+
+```bash
+just spawn windows               # boots windows-1 in the background
+just list-windows                # show it + its forwarded SSH/RDP ports
+ssh admin@127.0.0.1 -p 2222      # log in by key (RDP password in .env.windows-vms)
+just delete windows-1            # tear it down when done
+```
+
+`just spawn windows -c 3` runs a fleet (each instance gets its own COW
+disk and forwarded ports). For a single VM — or to probe whether the
+artifact came out good — `just run-windows --seed` does the same seeding
+for one VM. Full details (seed format + defaults, the FirstBootSeed
+mechanism, `--bridged` per-VM-IP networking) are in
+[`../../docs/cloning-windows.md`](../../docs/cloning-windows.md) and
+[`seed/README.md`](seed/README.md).
+
+## Consuming the output (manual / hands-on)
+
+These are the by-hand routes — useful for interactive/graphical work or
+debugging. For the automated path, see "Running a clone" above.
 
 ### UTM
 
