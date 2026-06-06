@@ -136,8 +136,8 @@ hit stdout:
 
 ```bash
 # .env.windows-vms
-WINVM_WIN_1_PASSWORD='...'
-WINVM_WIN_2_PASSWORD='...'
+WINVM_WINDOWS_1_PASSWORD='...'
+WINVM_WINDOWS_2_PASSWORD='...'
 ```
 
 ### Networking: why per-VM SSH ports
@@ -149,8 +149,8 @@ A host port binds once, so the VMs can't share `:22` — hence the offsets.
 No privileges needed. After first boot (a few minutes):
 
 ```bash
-ssh admin@127.0.0.1 -p 2222      # win-1   (key login; password in .env.windows-vms for RDP)
-ssh admin@127.0.0.1 -p 2223      # win-2
+ssh admin@127.0.0.1 -p 2222      # windows-1   (key login; password in .env.windows-vms for RDP)
+ssh admin@127.0.0.1 -p 2223      # windows-2
 ```
 
 For the Tart-like "each VM has its own IP, reachable on the normal `:22`",
@@ -172,7 +172,7 @@ teardown needs `sudo just cleanup-windows-vms`.
 ```bash
 just cleanup-windows-vms --dry-run   # list instances + ports/mode + running state
 just cleanup-windows-vms             # stop qemu/swtpm, remove disks, prune .env entries
-just cleanup-windows-vms -n win-2    # just one
+just cleanup-windows-vms -n windows-2    # just one
 just cleanup-vms windows --dry-run   # same thing via the unified verb
 ```
 

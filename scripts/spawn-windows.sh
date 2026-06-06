@@ -18,7 +18,7 @@
 #   - swtpm + qemu process, tracked by pidfiles under the instance dir.
 #
 # Usage:
-#   ./scripts/spawn-windows.sh                 # win-<next-free-N>
+#   ./scripts/spawn-windows.sh                 # windows-<next-free-N>
 #   ./scripts/spawn-windows.sh -c 3            # three at once
 #   ./scripts/spawn-windows.sh -n devbox       # explicit name (no auto-increment)
 #   ./scripts/spawn-windows.sh -i ~/.ssh/k.pub # explicit pubkey (repeatable)
@@ -125,7 +125,7 @@ instance_exists() { [[ -d "${INSTANCES_DIR}/$1" ]]; }
 
 next_free_index() {
   local n=1
-  while instance_exists "win-${n}"; do n=$((n + 1)); done
+  while instance_exists "windows-${n}"; do n=$((n + 1)); done
   echo "$n"
 }
 
@@ -263,7 +263,7 @@ if [[ -n "$EXPLICIT_NAME" ]]; then
   spawn_one "$EXPLICIT_NAME"
 else
   for ((i = 0; i < COUNT; i++)); do
-    spawn_one "win-$(next_free_index)"
+    spawn_one "windows-$(next_free_index)"
   done
 fi
 
