@@ -44,6 +44,23 @@ spawn distro *FLAGS:
 cleanup-vms distro *FLAGS:
     @./scripts/cleanup-vms.sh {{distro}} {{FLAGS}}
 
+# Spawn one or more Windows 11 clones from the base qcow2, each headless
+# under qemu with its own COW disk, seed CD, and SSH/RDP/VNC ports. The
+# Windows analogue of `just spawn` (Tart can't host Windows). Generated
+# admin passwords are written to .env.windows-vms, not stdout.
+#   just spawn-windows               # win-<N>
+#   just spawn-windows -c 3          # three at once
+#   just spawn-windows -n devbox     # explicit name
+#   just spawn-windows --seed packer/windows-11-arm64/seed/lab-seed.json
+spawn-windows *FLAGS:
+    @./scripts/spawn-windows.sh {{FLAGS}}
+
+# Stop + delete Windows instances created by `just spawn-windows`.
+# Interactive confirmation; -y to skip, --dry-run to preview, -n <name>
+# for a single instance.
+cleanup-windows-vms *FLAGS:
+    @./scripts/cleanup-windows-vms.sh {{FLAGS}}
+
 # Boot the built Windows qcow2 directly under qemu-system-aarch64 with the
 # same TPM + EFI + ramfb + USB plumbing the build used. Probes whether the
 # artifact is good without UTM in the way. Defaults to a COW clone so the

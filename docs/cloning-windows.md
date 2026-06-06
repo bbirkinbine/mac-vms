@@ -113,6 +113,74 @@ Log in (console / RDP / SSH — both are enabled by `20-harden.ps1`) as
 the seeded user. The hostname takes effect after the first reboot.
 After first boot the seed CD can be detached; both tasks self-destruct.
 
+## Multiple instances (`just spawn windows`)
+
+`just run-windows --seed` is single-VM (fixed COW disk + fixed host
+ports). To run a **fleet**, use the spawn command — `just spawn windows`
+delegates to the Windows fleet manager (`spawn-windows.sh`), so the same
+verb works for all three OSes even though Windows runs under qemu and
+ubuntu/kali run under Tart:
+
+```bash
+just spawn windows               # win-<next-free-N>   (= just spawn-windows)
+just spawn windows -c 3          # three at once
+just spawn windows -n devbox     # explicit name
+just spawn windows --seed packer/windows-11-arm64/seed/lab-seed.json   # base seed, hostname per-instance
+```
+
+Each instance gets its own COW disk + NVRAM (the base qcow2 stays
+sysprep-fresh), a seed CD with `hostname = instance name` and user
+`admin`, and its generated admin password appended to `.env.windows-vms`
+(gitignored) — spawn passes `build-cidata.sh --env`, so passwords never
+hit stdout:
+
+```bash
+# .env.windows-vms
+WINVM_WIN_1_PASSWORD='...'
+WINVM_WIN_2_PASSWORD='...'
+```
+
+### Networking: why per-VM SSH ports
+
+By default the fleet uses qemu **user-mode NAT**: every VM shares the
+host's loopback IP, so each one's guest `:22`/`:3389` is forwarded to a
+distinct host port, scanned from SSH `2222+`, RDP `13389+`, VNC `5950+`.
+A host port binds once, so the VMs can't share `:22` — hence the offsets.
+No privileges needed. After first boot (a few minutes):
+
+```bash
+ssh admin@127.0.0.1 -p 2222      # win-1   (key login; password in .env.windows-vms for RDP)
+ssh admin@127.0.0.1 -p 2223      # win-2
+```
+
+For the Tart-like "each VM has its own IP, reachable on the normal `:22`",
+pass **`--bridged`**, which uses macOS **vmnet** instead of NAT. vmnet
+needs root, so it must run under sudo:
+
+```bash
+sudo just spawn windows --bridged -c 2
+```
+
+Each VM then gets its own IP on a shared, host-reachable subnet (and a
+deterministic MAC). Discovery isn't as turnkey as NAT — find a VM's IP
+from its VNC console (`ipconfig`) or your `arp` table, then
+`ssh admin@<ip>`. Note a bridged instance's qemu runs as root, so its
+teardown needs `sudo just cleanup-windows-vms`.
+
+### List and tear down
+
+```bash
+just cleanup-windows-vms --dry-run   # list instances + ports/mode + running state
+just cleanup-windows-vms             # stop qemu/swtpm, remove disks, prune .env entries
+just cleanup-windows-vms -n win-2    # just one
+just cleanup-vms windows --dry-run   # same thing via the unified verb
+```
+
+Per-instance state (disk, NVRAM, cidata, pidfiles, logs, `meta`) lives
+under `packer/windows-11-arm64/output-windows-11-arm64/instances/<name>/`
+(gitignored). VMs run headless; attach a VNC viewer to
+`127.0.0.1:<5900+display>` to watch one boot.
+
 ## Fallback: interactive account creation (no seed)
 
 If you boot a clone with **no** seed CD attached, `FirstBootSeed`

@@ -17,6 +17,23 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Windows clones are qemu-based, not Tart — delegate to their own teardown,
+# forwarding flags (--dry-run/-y, and -n <name>) untouched. -n takes a value.
+_fwd=(); _skip=0; _is_win=0
+for _a in "$@"; do
+  if [[ "$_skip" -eq 1 ]]; then _fwd+=("$_a"); _skip=0; continue; fi
+  case "$_a" in
+    -n)      _fwd+=("$_a"); _skip=1 ;;
+    windows) _is_win=1 ;;
+    *)       _fwd+=("$_a") ;;
+  esac
+done
+if [[ "$_is_win" -eq 1 ]]; then
+  exec "${REPO_ROOT}/scripts/cleanup-windows-vms.sh" "${_fwd[@]}"
+fi
+
 DISTRO=""
 DRY_RUN=false
 YES=false
@@ -25,7 +42,8 @@ usage() {
   cat <<USAGE
 Usage: $0 <distro> [--dry-run|-y|--yes]
 
-  distro       Required. One of: ubuntu, kali.
+  distro       Required. One of: ubuntu, kali, windows.
+               (windows delegates to scripts/cleanup-windows-vms.sh.)
   --dry-run    List matching VMs without deleting them.
   -y, --yes    Skip the interactive confirmation prompt.
   -h, --help   This message.
@@ -64,7 +82,7 @@ case "$DISTRO" in
   ubuntu) BASE_VM="ubuntu-24-04-arm64-base" ;;
   kali)   BASE_VM="kali-rolling-arm64-base" ;;
   *)
-    echo "ERROR: unsupported distro '$DISTRO'. Supported: ubuntu, kali." >&2
+    echo "ERROR: unsupported distro '$DISTRO'. Supported: ubuntu, kali, windows." >&2
     exit 1
     ;;
 esac

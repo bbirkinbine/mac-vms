@@ -22,6 +22,25 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Windows isn't a Tart distro (Tart can't host it), so it has its own
+# qemu-based fleet manager. If 'windows' is the requested distro, hand off to
+# scripts/spawn-windows.sh, forwarding every other flag untouched — including
+# the Windows-only ones (--seed, --bridged) that this script doesn't know.
+# -c/-n/-i each take a value, so skip the following token when scanning for
+# the bare 'windows' positional.
+_fwd=(); _skip=0; _is_win=0
+for _a in "$@"; do
+  if [[ "$_skip" -eq 1 ]]; then _fwd+=("$_a"); _skip=0; continue; fi
+  case "$_a" in
+    -c|-n|-i) _fwd+=("$_a"); _skip=1 ;;
+    windows)  _is_win=1 ;;
+    *)        _fwd+=("$_a") ;;
+  esac
+done
+if [[ "$_is_win" -eq 1 ]]; then
+  exec "${REPO_ROOT}/scripts/spawn-windows.sh" "${_fwd[@]}"
+fi
+
 DISTRO=""
 COUNT=1
 EXPLICIT_NAME=""
@@ -31,7 +50,10 @@ usage() {
   cat <<USAGE
 Usage: $0 <distro> [-c <count>] [-n <name>] [-i <path>]...
 
-  distro       Required. One of: ubuntu, kali.
+  distro       Required. One of: ubuntu, kali, windows.
+               (windows delegates to scripts/spawn-windows.sh — a qemu
+               fleet manager, since Tart can't host Windows. It accepts
+               the same -c/-n/-i plus Windows-only --seed/--bridged.)
   -c <count>   Number of VMs to spawn (default 1). Each gets the next
                free \`<distro>-N\` suffix. Incompatible with -n.
   -n <name>    Explicit VM name. Skips auto-increment; count implied 1.
@@ -45,6 +67,7 @@ Examples:
   $0 kali -c 3
   $0 ubuntu -n webhost-01
   $0 kali -i ~/.ssh/recon.pub
+  $0 windows -c 2          # -> spawn-windows.sh
 USAGE
 }
 
@@ -116,7 +139,7 @@ case "$DISTRO" in
     ;;
   *)
     echo "ERROR: unsupported distro '$DISTRO'." >&2
-    echo "       Supported: ubuntu, kali. (Windows has no cidata flow yet — see docs/cloning-windows.md.)" >&2
+    echo "       Supported: ubuntu, kali, windows (windows is delegated to spawn-windows.sh)." >&2
     exit 1
     ;;
 esac
