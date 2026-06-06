@@ -3,25 +3,29 @@
 Open work and known gaps in mac-vms. Keep this short — entries should either
 get fixed or move into a doc with proper background.
 
-## Windows — cloud-init-equivalent path not implemented or tested
+## Windows — seed flow built, needs an end-to-end verification run
 
-The Windows pipeline produces a sysprep'd qcow2 (see
-[`docs/windows-build-attempts.md`](docs/windows-build-attempts.md)) and an
-interactive UTM consumption path. What's missing:
+Per-VM identity injection is now implemented for Windows (the
+cloudbase-init analogue): `provision/30-install-firstboot-seed.ps1`
+installs a `FirstBootSeed` scheduled task that reads a JSON seed off an
+attached CD, and `seed/build-cidata.sh` produces that CD on the Mac.
+`provision/99-sysprep.ps1` gates the Administrator lockdown on a seed
+login existing. See [`docs/cloning-windows.md`](docs/cloning-windows.md)
+and [`packer/windows-11-arm64/seed/README.md`](packer/windows-11-arm64/seed/README.md).
 
-- No equivalent of `seed/build-cidata.sh` for Windows. Per-VM identity
-  injection (hostname, admin user, RDP credentials) is not implemented.
-- The intended mechanism — `cloudbase-init` (Windows analogue of cloud-init)
-  reading a NoCloud-shaped seed disk — is referenced in
-  [`docs/cloning-windows.md`](docs/cloning-windows.md) but the
-  provisioner stub at
-  [`packer/windows-11-arm64/provision/30-cloudbase-init.ps1`](packer/windows-11-arm64/provision/30-cloudbase-init.ps1)
-  isn't fleshed out.
-- No end-to-end clone-and-seed test loop has been run for Windows.
+What's left:
 
-Likely current state: Windows builds, but a clone is identical to the base
-image with no per-VM identity step. Acceptable for snapshots and throwaway
-VMs, not yet at parity with the Linux flow.
+- **No end-to-end verification yet.** `just clean && just build-windows`,
+  then clone + attach a `cidata.iso` + boot + confirm the seeded user
+  logs in (console/RDP/SSH) and the build Administrator is disabled. The
+  scripts are written and `packer validate` passes, but the first real
+  run will likely need debugging — the `FirstBootSeed` ↔
+  `PackerBuildCleanup` AtStartup handshake and the CD enumeration timing
+  are the most likely soft spots.
+- **Standard (non-admin) seed users:** SSH keys are only applied if the
+  profile already exists at first boot (it usually won't). Admin users
+  use `administrators_authorized_keys` and are unaffected. Revisit if a
+  non-admin seed user is ever needed.
 
 ## `tart push` / OCI distribution not wired up
 

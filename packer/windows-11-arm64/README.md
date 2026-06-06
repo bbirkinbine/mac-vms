@@ -117,9 +117,14 @@ Mirrors the homelab Windows base structure
 | --- | --- | --- |
 | `00-wait-for-winrm.ps1` | Ported as-is from homelab | Ready |
 | `15-windows-cleanup.ps1` | Ported as-is (registry / DISM — arch-agnostic) | Ready |
-| `20-harden.ps1` | Homelab equivalent enables RDP + OpenSSH Server | **Stub** — port the homelab file once we can verify on ARM |
-| `30-install-cloudbase-init.ps1` | Homelab uses x64 MSI | **Stub** — needs an ARM64 cloudbase-init installer URL |
-| `99-sysprep.ps1` | Ported from homelab with `processorArchitecture="arm64"` and cloudbase-init pre-check relaxed | Ready (cleanup task + sysprep) |
+| `20-harden.ps1` | Ported from homelab, trimmed to RDP (NLA) + OpenSSH Server | Ready |
+| `30-install-firstboot-seed.ps1` | ARM-native replacement for cloudbase-init: installs the `FirstBootSeed` task that injects a per-VM login from an attached seed CD | Ready (built; not yet verified on a clean clone) |
+| `99-sysprep.ps1` | Ported from homelab (`processorArchitecture="arm64"`); cleanup now waits on the `FirstBootSeed` marker and refuses to disable Administrator on an unseeded clone | Ready (cleanup task + sysprep) |
+
+The per-VM identity flow (seed format, `build-cidata.sh`, the
+`FirstBootSeed` ↔ `PackerBuildCleanup` handshake) is documented in
+[`seed/README.md`](seed/README.md) and
+[`../../docs/cloning-windows.md`](../../docs/cloning-windows.md).
 
 ## Validation gates
 
@@ -195,11 +200,16 @@ bash -n ../../scripts/build-windows.sh
   from the unattend CD before WinRM bring-up, so the build still
   succeeds — but if NetKVM ever stops re-installing cleanly the
   symptom will be a hang at "waiting for WinRM."
-- **cloudbase-init for ARM64.** No official installer at
-  [cloudbase.it/downloads/](https://cloudbase.it/downloads/) yet. Until
-  one lands, clones won't auto-consume cloud-init seeds for per-VM
-  identity — see `provision/30-install-cloudbase-init.ps1` for the
-  open question.
+- **No cloudbase-init on ARM64 — we ship our own first-boot consumer.**
+  cloudbase.it publishes no official ARM64 installer
+  ([cloudbase.it/downloads/](https://cloudbase.it/downloads/), checked
+  2026-06), so per-VM identity is handled by the `FirstBootSeed`
+  scheduled task that `provision/30-install-firstboot-seed.ps1` installs.
+  It reads a JSON seed off an attached CD (built by
+  [`seed/build-cidata.sh`](seed/build-cidata.sh)) and creates the login
+  before `PackerBuildCleanup` locks down the build Administrator. The seed
+  is JSON rather than cloud-config YAML because Windows PowerShell 5.1 has
+  no built-in YAML parser — see [`seed/README.md`](seed/README.md).
 
 ## Where context lives
 

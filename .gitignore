@@ -22,10 +22,14 @@ output-*/
 # validate time even without a build run.
 packer/windows-11-arm64/drivers/staging/
 
-# Real seed YAMLs contain SSH pubkeys, hashes, etc. — never commit.
-# Whitelist the .example.yaml template only, same pattern as .env.*.
+# Real seeds contain SSH pubkeys, passwords, etc. — never commit.
+# Whitelist the .example templates only, same pattern as .env.*.
+# (YAML is the homelab/cloudbase-init shape; the Windows ARM64 pipeline
+# uses JSON — see packer/windows-11-arm64/seed/README.md.)
 packer/*/seed/*.yaml
 !packer/*/seed/*.example.yaml
+packer/*/seed/*.json
+!packer/*/seed/*.example.json
 
 # Downloaded installer media — large, redistributable only sometimes (Windows
 # ARM64 ISO from Microsoft is bring-your-own; Ubuntu ISO is fine to re-fetch).

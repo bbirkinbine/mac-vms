@@ -2,9 +2,10 @@
 #
 # Final step: install first-boot credential cleanup, write post-sysprep
 # unattend.xml, then sysprep generalize + shutdown. After this runs, the
-# disk is the template artifact. Boot of any clone goes through OOBE-mini
-# and (once cloudbase-init lands in 30-*) lands at cloudbase-init for
-# per-clone identity.
+# disk is the template artifact. Boot of any clone runs FirstBootSeed
+# (installed by 30-install-firstboot-seed.ps1) to inject a per-VM login
+# from an attached seed CD, then PackerBuildCleanup to lock down the
+# build Administrator.
 #
 # Sysprep terminates the WinRM session as part of generalize. Packer
 # expects the disconnect — windows.pkr.hcl sets valid_exit_codes for the
@@ -24,26 +25,23 @@
 # Templates never power on, so the task never fires on the template
 # itself.
 #
-# Ported from homelab/packer/windows-11-base/provision/99-sysprep.ps1
-# with two changes:
-#   - cloudbase-init pre-check downgraded from `throw` to a warning,
-#     since 30-install-cloudbase-init.ps1 is currently a stub.
-#   - unattend XML uses processorArchitecture="arm64".
+# Ported from homelab/packer/windows-11-base/provision/99-sysprep.ps1.
+# The homelab cleanup waits on the cloudbase-init service; this one waits
+# on the FirstBootSeed marker file instead (no cloudbase-init on ARM64 —
+# see 30-install-firstboot-seed.ps1) and refuses to disable the only admin
+# account when no seed was applied. unattend XML uses
+# processorArchitecture="arm64".
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference    = "SilentlyContinue"
 
 Write-Host "=== 99-sysprep ==="
 
-# Soft check: warn if cloudbase-init isn't installed. Once 30-* lands,
-# tighten this back to `throw`.
-$cbi = Get-Service -Name "cloudbase-init" -ErrorAction SilentlyContinue
-if ($null -eq $cbi) {
-    Write-Host "WARN: cloudbase-init service not found. Clones will not get per-VM identity from a cloud-init seed."
-    Write-Host "      See provision/30-install-cloudbase-init.ps1 for the planned shape."
-} elseif ($cbi.Status -eq "Running") {
-    Write-Host "Stopping cloudbase-init service..."
-    Stop-Service -Name "cloudbase-init" -Force
+# Precondition: 30-install-firstboot-seed.ps1 must have registered the
+# FirstBootSeed task earlier in the pipeline. Without it, clones get no
+# per-VM login and PackerBuildCleanup would have nothing to wait for.
+if (-not (Get-ScheduledTask -TaskName "FirstBootSeed" -ErrorAction SilentlyContinue)) {
+    throw "FirstBootSeed task not found. 30-install-firstboot-seed.ps1 must run before 99-sysprep.ps1."
 }
 
 # Install first-boot cleanup script under C:\Windows\Setup\Scripts (a
@@ -64,20 +62,25 @@ $cleanupBody = @'
 # the end so it cannot fire twice.
 #
 # Order is load-bearing:
-#   1. Wait for cloudbase-init to finish so per-clone user creation has
-#      already landed before we remove the build-Administrator path.
-#   2. Rotate Administrator's password to a 32-byte random value before
+#   1. Wait for FirstBootSeed to land its marker so the per-VM login has
+#      already been created before we remove the build-Administrator path.
+#   2. GATE: only lock down Administrator if a real seed user exists. If
+#      the marker is NO-SEED (or never appears), leave Administrator
+#      ACTIVE — disabling the only admin account on an unseeded clone
+#      would brick it. The seeded path is the supported one.
+#   3. Rotate Administrator's password to a 32-byte random value before
 #      disabling. Defense in depth — if anything later re-enables the
 #      account, the embedded build password from the public
 #      Autounattend.xml no longer works.
-#   3. Disable the built-in Administrator account.
-#   4. Clear AutoAdminLogon registry values written by the answer file
+#   4. Disable the built-in Administrator account.
+#   5. Clear AutoAdminLogon registry values written by the answer file
 #      (DefaultPassword is an LSA secret; we delete the value to prevent
-#      future use).
-#   5. Self-destruct: unregister the scheduled task, remove this script.
+#      future use). Done in every case — it can never cause a lockout.
+#   6. Self-destruct: unregister the scheduled task, remove this script.
 
 $ErrorActionPreference = 'Stop'
-$logPath = 'C:\Windows\Setup\Scripts\packer-cleanup.log'
+$logPath    = 'C:\Windows\Setup\Scripts\packer-cleanup.log'
+$markerPath = 'C:\Windows\Setup\Scripts\seed-applied.marker'
 
 function Write-CleanupLog($msg) {
     "$([DateTime]::UtcNow.ToString('o')) $msg" | Add-Content -Path $logPath -Encoding UTF8
@@ -86,34 +89,39 @@ function Write-CleanupLog($msg) {
 try {
     Write-CleanupLog '=== packer-cleanup starting ==='
 
-    # 1. Wait for cloudbase-init to reach Stopped (it auto-stops after
-    #    its Plugins phase). Bound by ~120s — a stuck service must not
-    #    block the credential lockdown forever.
-    $cbi = Get-Service -Name 'cloudbase-init' -ErrorAction SilentlyContinue
-    if ($cbi) {
-        $deadline = (Get-Date).AddSeconds(120)
-        while ($cbi.Status -ne 'Stopped' -and (Get-Date) -lt $deadline) {
-            Start-Sleep -Seconds 5
-            $cbi.Refresh()
-        }
-        Write-CleanupLog "cloudbase-init final status: $($cbi.Status)"
+    # 1. Wait for FirstBootSeed to write its marker. Both tasks fire
+    #    AtStartup; this poll is what orders them — we block here until the
+    #    seed task lands the marker (or ~180s elapses). A stuck seed must
+    #    not park the lockdown forever.
+    $deadline = (Get-Date).AddSeconds(180)
+    while (-not (Test-Path $markerPath) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 5
+    }
+    $seedUser = if (Test-Path $markerPath) { (Get-Content -Path $markerPath -Raw).Trim() } else { '' }
+    Write-CleanupLog "seed marker: '$seedUser'"
+
+    # 2. Gate. Lock down Administrator only when a replacement login exists.
+    if ($seedUser -and $seedUser -ne 'NO-SEED') {
+        # 3. Rotate Administrator password to a strong random value.
+        $bytes = New-Object byte[] 24
+        [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $randomPw = [Convert]::ToBase64String($bytes) + '!Aa1'
+        & net.exe user Administrator $randomPw | Out-Null
+        Write-CleanupLog 'Administrator password rotated'
+
+        # 4. Disable the account. /active:no flips the UF_ACCOUNTDISABLE flag.
+        & net.exe user Administrator /active:no | Out-Null
+        Write-CleanupLog "Administrator account disabled (seed user '$seedUser' present)"
     } else {
-        Write-CleanupLog 'cloudbase-init service not present (skipping wait)'
+        Write-CleanupLog 'WARNING: no seed user created (no CIDATA seed attached or seed failed).'
+        Write-CleanupLog 'WARNING: leaving Administrator ACTIVE to avoid locking out the clone.'
+        Write-CleanupLog 'WARNING: this clone still carries the public build password from Autounattend.xml.'
+        Write-CleanupLog 'WARNING: attach a seed CD (see seed/README.md) or change the password manually.'
     }
 
-    # 2. Rotate Administrator password to a strong random value.
-    $bytes = New-Object byte[] 24
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    $randomPw = [Convert]::ToBase64String($bytes) + '!Aa1'
-    & net.exe user Administrator $randomPw | Out-Null
-    Write-CleanupLog 'Administrator password rotated'
-
-    # 3. Disable the account. /active:no flips the UF_ACCOUNTDISABLE flag.
-    & net.exe user Administrator /active:no | Out-Null
-    Write-CleanupLog 'Administrator account disabled'
-
-    # 4. Clear AutoAdminLogon registry values. AutoAdminLogon is a string
-    #    "0"/"1"; the rest are simple values that we remove entirely.
+    # 5. Clear AutoAdminLogon registry values in every case — this can
+    #    never cause a lockout, only stop a stray auto-login. AutoAdminLogon
+    #    is a string "0"/"1"; the rest are values we remove entirely.
     $winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     Set-ItemProperty -Path $winlogon -Name 'AutoAdminLogon' -Value '0' -Type String -ErrorAction SilentlyContinue
     foreach ($name in 'DefaultPassword','DefaultUserName','AutoLogonCount') {
@@ -121,7 +129,7 @@ try {
     }
     Write-CleanupLog 'AutoAdminLogon registry values cleared'
 
-    # 5. Self-destruct. Unregister first so a partial-failure leaves the
+    # 6. Self-destruct. Unregister first so a partial-failure leaves the
     #    task gone (next boot has no retry); then remove the script file.
     Unregister-ScheduledTask -TaskName 'PackerBuildCleanup' -Confirm:$false -ErrorAction SilentlyContinue
     Write-CleanupLog 'Scheduled task unregistered'

@@ -131,15 +131,16 @@ build {
   // Provisioner pipeline parallels the homelab Windows base:
   //   00 — preamble (identity check, version dump, OOBE settle)
   //   15 — disable telemetry, OneDrive, news, hibernate
-  //   20 — STUB. Port homelab harden script (RDP + OpenSSH Server)
-  //   30 — STUB. cloudbase-init install needs an ARM64 installer URL
+  //   20 — enable RDP (NLA) + OpenSSH Server so the seeded user can log in
+  //   30 — install FirstBootSeed: ARM-native per-VM identity injection from
+  //        an attached seed CD (cloudbase-init has no ARM64 build)
   //   99 — install PackerBuildCleanup scheduled task + sysprep generalize
   provisioner "powershell" {
     scripts = [
       "provision/00-wait-for-winrm.ps1",
       "provision/15-windows-cleanup.ps1",
       "provision/20-harden.ps1",
-      "provision/30-install-cloudbase-init.ps1",
+      "provision/30-install-firstboot-seed.ps1",
     ]
   }
 
