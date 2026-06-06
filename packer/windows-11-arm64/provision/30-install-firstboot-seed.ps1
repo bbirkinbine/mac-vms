@@ -107,15 +107,23 @@ try {
 
     $seed = Get-Content -Path $seedFile -Raw | ConvertFrom-Json
 
-    if (-not $seed.username -or -not $seed.password) {
-        Write-SeedLog 'ERROR: seed missing username or password; treating as NO-SEED.'
-        Set-Marker 'NO-SEED'
-        Complete-Seed
-        return
-    }
+    # Defaults mirror the Linux pipelines (runtime user 'ubuntu'/'kali',
+    # SSH-key-only by default). build-cidata.sh normally fills these in, but
+    # default here too so a hand-written seed can omit them.
+    $username = if ($seed.username) { [string]$seed.username } else { 'admin' }
 
-    $username = [string]$seed.username
-    $password = ConvertTo-SecureString ([string]$seed.password) -AsPlainText -Force
+    if ($seed.password) {
+        $plainPw = [string]$seed.password
+    } else {
+        # Key-only account: set a strong random password so the account is
+        # valid and enabled, but log in via the injected SSH key. Put a real
+        # password in the seed only if you need console/RDP login.
+        $rngBytes = New-Object byte[] 24
+        [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rngBytes)
+        $plainPw = [Convert]::ToBase64String($rngBytes) + '!Aa1'
+        Write-SeedLog 'no password in seed; generated a random one (SSH-key-only account)'
+    }
+    $password = ConvertTo-SecureString $plainPw -AsPlainText -Force
 
     # 2. Create or update the local user. PasswordNeverExpires so the
     #    injected login keeps working in a throwaway lab VM.

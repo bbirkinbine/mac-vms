@@ -44,30 +44,38 @@ full diagnostic story. Consumption is via UTM or
 
 ## Seeded flow (recommended)
 
-This is the automated path: write a seed, boot a clone with it attached,
-get a configured login with no OOBE clicking.
+This is the automated path: boot a clone with a seed attached, get a
+configured login with no OOBE clicking. It has sensible defaults, so the
+zero-config version needs no seed file at all:
 
 ```bash
-just build-windows   # if you haven't already
+just build-windows         # if you haven't already
+just run-windows --seed    # defaults: user 'admin', your ~/.ssh keys, random password
+```
 
+That clones the base, builds a seed CD from defaults (user `admin`,
+hostname `windows`, every `~/.ssh/id_*.pub` auto-injected, a strong random
+password **printed in the output**), attaches it as a `usb-storage` CD,
+and forwards host ports. Once first boot finishes:
+
+```bash
+ssh -p 2222 admin@127.0.0.1              # key login; or RDP 127.0.0.1:13389 with the printed password
+```
+
+To customize, write a seed and pass it — every field is optional (see
+[`seed/README.md`](../packer/windows-11-arm64/seed/README.md)):
+
+```bash
 cd packer/windows-11-arm64
 cp seed/lab-seed.example.json seed/lab-seed.json
-$EDITOR seed/lab-seed.json        # set username, password, hostname, SSH key
-
-# From the repo root: build the seed CD, COW-clone the base, attach the
-# CD, forward SSH (host :2222) + RDP (host :13389), and boot.
+$EDITOR seed/lab-seed.json        # set any of: username, password, hostname, ssh keys
 just run-windows --fresh --seed packer/windows-11-arm64/seed/lab-seed.json
 ```
 
 `just run-windows --seed` is the seeded analogue of the Linux `just spawn`
 flow: it runs `seed/build-cidata.sh` for you, attaches the resulting
 `cidata.iso` as a `usb-storage` CD (ARM `virt` has no IDE/SATA), and
-forwards host ports so the clone is reachable without console access. Once
-first boot finishes:
-
-```bash
-ssh -p 2222 <seed-user>@127.0.0.1        # or RDP to 127.0.0.1:13389
-```
+forwards host ports so the clone is reachable without console access.
 
 ### Doing it by hand (UTM, or manual qemu)
 

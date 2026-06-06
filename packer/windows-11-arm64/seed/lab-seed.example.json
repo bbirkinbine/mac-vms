@@ -1,9 +1,5 @@
 {
-  "hostname": "win11-dev",
-  "username": "lab",
-  "password": "change-me-before-using",
-  "groups": ["Administrators"],
-  "ssh_authorized_keys": [
-    "ssh-ed25519 AAAA...replace-with-your-pubkey... user@host"
-  ]
+  "hostname": "windows",
+  "username": "admin",
+  "groups": ["Administrators"]
 }
