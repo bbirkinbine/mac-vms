@@ -125,6 +125,7 @@ ubuntu/kali run under Tart:
 just spawn windows               # win-<next-free-N>   (= just spawn-windows)
 just spawn windows -c 3          # three at once
 just spawn windows -n devbox     # explicit name
+just spawn windows --headless    # no window (VNC display instead) — good for batches
 just spawn windows --seed packer/windows-11-arm64/seed/lab-seed.json   # base seed, hostname per-instance
 ```
 
@@ -195,8 +196,10 @@ just cleanup-vms windows                 # same teardown via the unified verb
 Per-instance state (disk, NVRAM, cidata, pidfiles, logs, `meta`) lives
 under `packer/windows-11-arm64/run/instances/<name>/` (gitignored) —
 deliberately outside the Packer `output-*/` dir so `just build-windows`
-(which clears it) never destroys a running clone. VMs run headless;
-attach a VNC viewer to `127.0.0.1:<5900+display>` to watch one boot.
+(which clears it) never destroys a running clone. Each VM opens a window
+by default so you can watch first boot (it takes a few minutes); pass
+`--headless` to `just spawn windows` for no window plus a VNC display at
+`127.0.0.1:<5900+display>` instead (better for batches / remote use).
 
 ## Fallback: interactive account creation (no seed)
 

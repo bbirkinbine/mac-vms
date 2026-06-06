@@ -92,21 +92,22 @@ exists — otherwise it's left active for recovery).
 
 After a build, the quickest way to a usable VM is the spawn flow — it
 clones the qcow2, **injects a per-VM login** (user `admin`, your
-`~/.ssh/id_*.pub`, and a generated password) and boots it headless under
-qemu. No OOBE clicking, no manual qemu flags:
+`~/.ssh/id_*.pub`, and a generated password) and boots it under qemu in a
+window so you can watch first boot. No OOBE clicking, no manual qemu flags:
 
 ```bash
-just spawn windows               # boots windows-1 in the background
+just spawn windows               # boots windows-1 (a window opens)
 just list-windows                # show it + its forwarded SSH/RDP ports
 ssh admin@127.0.0.1 -p 2222      # log in by key (RDP password in .env.windows-vms)
 just delete windows-1            # tear it down when done
 ```
 
 `just spawn windows -c 3` runs a fleet (each instance gets its own COW
-disk and forwarded ports). For a single VM — or to probe whether the
+disk and forwarded ports); add `--headless` for no window (VNC instead),
+which is friendlier for batches. For a single VM — or to probe whether the
 artifact came out good — `just run-windows --seed` does the same seeding
 for one VM. Full details (seed format + defaults, the FirstBootSeed
-mechanism, `--bridged` per-VM-IP networking) are in
+mechanism, `--headless` / `--bridged`) are in
 [`../../docs/cloning-windows.md`](../../docs/cloning-windows.md) and
 [`seed/README.md`](seed/README.md).
 

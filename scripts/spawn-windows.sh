@@ -14,13 +14,17 @@
 #     forwards (SSH 2222+, RDP 13389+) — no privileges needed. With --bridged
 #     each VM instead gets its OWN IP via macOS vmnet (reachable on the normal
 #     :22 / :3389, like the Tart Linux VMs) — but vmnet needs root, so
-#     --bridged must run under sudo. A VNC display (5950+) is allocated either way.
+#     --bridged must run under sudo.
+#   - display: a window per VM by default so you can watch first boot (it
+#     takes a few minutes). --headless opens no window and serves a VNC
+#     display (5950+) instead — better for batches / remote use.
 #   - swtpm + qemu process, tracked by pidfiles under the instance dir.
 #
 # Usage:
-#   ./scripts/spawn-windows.sh                 # windows-<next-free-N>
+#   ./scripts/spawn-windows.sh                 # windows-<next-free-N> (shows a window)
 #   ./scripts/spawn-windows.sh -c 3            # three at once
 #   ./scripts/spawn-windows.sh -n devbox       # explicit name (no auto-increment)
+#   ./scripts/spawn-windows.sh --headless      # no window; VNC display instead
 #   ./scripts/spawn-windows.sh -i ~/.ssh/k.pub # explicit pubkey (repeatable)
 #   ./scripts/spawn-windows.sh --seed s.json   # base seed; hostname is overridden per instance
 #   sudo ./scripts/spawn-windows.sh --bridged  # per-VM IP on :22 (vmnet; needs root)
@@ -51,10 +55,11 @@ COUNT=1
 EXPLICIT_NAME=""
 SEED_FILE=""
 BRIDGED=false
+HEADLESS=false
 declare -a EXPLICIT_KEY_FLAGS=()
 
 usage() {
-  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ---- argument parsing -------------------------------------------------------
@@ -84,6 +89,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --seed=*) SEED_FILE="${1#--seed=}" ;;
     --bridged) BRIDGED=true ;;
+    --headless) HEADLESS=true ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 1 ;;
     *) echo "ERROR: unexpected argument: $1" >&2; usage >&2; exit 1 ;;
@@ -180,11 +186,22 @@ spawn_one() {
   qemu-img create -f qcow2 -b "$BASE_QCOW2" -F qcow2 "${dir}/disk.qcow2" >/dev/null
   cp "$BASE_EFIVARS" "${dir}/vars.fd"
 
-  # Networking. VNC display is always allocated (headless inspection).
-  local vnc_port vnc_disp ssh_port="" rdp_port="" mac=""
-  vnc_port="$(alloc_port "$VNC_PORT_BASE")"
-  vnc_disp=$((vnc_port - 5900))
+  # Display: a window by default so you can watch first boot (which takes a
+  # few minutes); --headless uses a VNC server instead (no window) on an
+  # allocated display you can attach to later.
+  local vnc_disp=""
+  local -a DISPLAY_ARGS=()
+  if [[ "$HEADLESS" == "true" ]]; then
+    local vnc_port
+    vnc_port="$(alloc_port "$VNC_PORT_BASE")"
+    vnc_disp=$((vnc_port - 5900))
+    DISPLAY_ARGS=(-vnc "127.0.0.1:${vnc_disp}")
+  else
+    DISPLAY_ARGS=(-display "cocoa,zoom-to-fit=on")
+  fi
 
+  # Networking.
+  local ssh_port="" rdp_port="" mac=""
   local -a NETDEV_ARGS=()
   local NET_DEVICE
   if [[ "$BRIDGED" == "true" ]]; then
@@ -210,10 +227,11 @@ spawn_one() {
   for _ in 1 2 3 4 5; do [[ -S "$sock" ]] && break; sleep 1; done
   [[ -S "$sock" ]] || { echo "ERROR: [${name}] swtpm socket did not appear" >&2; exit 1; }
 
+  local view; if [[ "$HEADLESS" == "true" ]]; then view="headless, VNC :${vnc_disp}"; else view="window"; fi
   if [[ "$BRIDGED" == "true" ]]; then
-    echo "==> [${name}] booting headless (vmnet, mac ${mac}, VNC :${vnc_disp})"
+    echo "==> [${name}] booting (${view}; vmnet, mac ${mac})"
   else
-    echo "==> [${name}] booting headless (SSH :${ssh_port}, RDP :${rdp_port}, VNC :${vnc_disp})"
+    echo "==> [${name}] booting (${view}; SSH :${ssh_port}, RDP :${rdp_port})"
   fi
   nohup qemu-system-aarch64 \
     -name "winvm-${name}" \
@@ -231,7 +249,7 @@ spawn_one() {
     -device usb-storage,drive=seedcd,bus=usb.0 \
     -device "$NET_DEVICE" \
     "${NETDEV_ARGS[@]}" \
-    -vnc "127.0.0.1:${vnc_disp}" \
+    "${DISPLAY_ARGS[@]}" \
     < /dev/null > "${dir}/qemu.log" 2>&1 &
   echo $! > "${dir}/qemu.pid"
   disown
@@ -247,10 +265,12 @@ spawn_one() {
     printf 'tpm_sock=%s\n' "$sock"
   } > "${dir}/meta"
 
+  local viewhint
+  if [[ "$HEADLESS" == "true" ]]; then viewhint="VNC :${vnc_disp}"; else viewhint="window open"; fi
   if [[ "$BRIDGED" == "true" ]]; then
-    SPAWNED_LINES+=("  ${name} → own IP via vmnet (mac ${mac}); find it from the VNC console (ipconfig) or arp, then: ssh admin@<ip>   (VNC :${vnc_disp})")
+    SPAWNED_LINES+=("  ${name} → own IP via vmnet (mac ${mac}); find it from the console (ipconfig) or arp, then ssh admin@<ip>   [${viewhint}]")
   else
-    SPAWNED_LINES+=("  ${name} → ssh admin@127.0.0.1 -p ${ssh_port}   (RDP 127.0.0.1:${rdp_port}, VNC :${vnc_disp})")
+    SPAWNED_LINES+=("  ${name} → ssh admin@127.0.0.1 -p ${ssh_port}   (RDP 127.0.0.1:${rdp_port})   [${viewhint}]")
   fi
 
   # If invoked under sudo (--bridged), hand the instance files back to the
