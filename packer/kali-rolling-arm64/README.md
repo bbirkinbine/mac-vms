@@ -47,47 +47,38 @@ runs `packer init / fmt -check / validate / build` inside this directory.
 
 ## Run
 
-```bash
-tart run kali-rolling-arm64-base
-```
-
-Build-time credentials (smoke test only — see warning below):
-
-- username: `packer`
-- password: `packer-build-only`
-
-> **These credentials work exactly once, on the base image, and only if
-> you boot it directly with `tart run`.** A `packer-cleanup.service`
-> systemd one-shot fires at the start of every boot (ordered
-> `Before=cloud-init-local.service`), deletes the `packer` user, and
-> self-destructs. So:
->
-> - On the **base** image, `tart run`-ing it once will use up that
->   credential. After that boot, no further login as `packer` works
->   — the user is gone and the cleanup unit is gone with it.
-> - On any **clone**, the cleanup unit fires before the clone's
->   network or sshd come up, so `packer` is never reachable from a
->   clone over SSH or the console.
->
-> Don't depend on these for anything beyond a one-off "did the build
-> produce a bootable image?" smoke test on the base. Real per-VM access
-> comes from the cidata seed below.
-
-The base image is intended to be **cloned** for downstream use rather
-than logged into directly. Fastest path:
+The base image is meant to be **cloned**, not logged into directly. The
+fast path is `just spawn` — it generates a per-VM cidata.iso (hostname =
+VM name, user `kali`, SSH keys auto-injected from `~/.ssh/id_*.pub`),
+`tart clone`s the base, and boots headless in the background:
 
 ```bash
-just spawn kali              # kali-N for next free N
-just spawn kali -c 3         # batch of three
-just cleanup-vms kali        # tear down all kali-* clones
+just spawn kali             # kali-N for the next free N
+just spawn kali -c 3        # batch of three
+just list                   # what's running (+ how to ssh in)
+ssh kali@$(tart ip kali-1)
+just cleanup-vms kali       # tear down all kali-* clones (or: just delete <name>)
 ```
 
-`just spawn` generates a per-VM cidata.iso (hostname = VM name, user =
-`kali`, SSH keys auto-injected from `~/.ssh/id_*.pub`), `tart clone`s
-the base, and boots headless in the background. Full cloning runbook
-(mental model, manual recipe, Kali-specific notes — sshd-enable,
-systemd-networkd, the Kali meta-pkg, debugging when cloud-init silently
-doesn't apply): [`docs/cloning-kali.md`](../../docs/cloning-kali.md).
+Full cloning runbook (mental model, manual recipe, Kali-specific notes —
+sshd-enable, systemd-networkd, the Kali meta-pkg, debugging when
+cloud-init silently doesn't apply):
+[`docs/cloning-kali.md`](../../docs/cloning-kali.md).
+
+### Smoke-testing the base directly
+
+To just confirm the build produced a bootable image, boot the base once
+with `tart run kali-rolling-arm64-base`. Build-time credentials are
+username `packer`, password `packer-build-only` —
+
+> **These work exactly once, on the base, and only via `tart run`.** A
+> `packer-cleanup.service` one-shot fires at the start of every boot
+> (ordered `Before=cloud-init-local.service`), deletes the `packer` user,
+> and self-destructs. So booting the base once uses up that credential,
+> and on any **clone** the cleanup fires before network/sshd come up, so
+> `packer` is never reachable. Don't depend on these beyond a one-off
+> "did it boot?" check — real per-VM access comes from the cidata seed
+> (the `just spawn` path above).
 
 ## Distributing between machines
 

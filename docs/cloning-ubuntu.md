@@ -37,7 +37,7 @@ Output gives you the SSH command per VM:
 
 ```text
 ==> spawned 1 VM(s):
-  ubuntu-1 → ssh ubuntu@192.168.64.27
+  ubuntu-1 (192.168.64.27) → ssh ubuntu@$(tart ip ubuntu-1)
 ```
 
 Behind the scenes [`scripts/spawn-vm.sh`](../scripts/spawn-vm.sh):

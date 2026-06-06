@@ -37,7 +37,7 @@ Output gives you the SSH command per VM:
 
 ```text
 ==> spawned 1 VM(s):
-  kali-1 → ssh kali@192.168.64.26
+  kali-1 (192.168.64.26) → ssh kali@$(tart ip kali-1)
 ```
 
 Behind the scenes [`scripts/spawn-vm.sh`](../scripts/spawn-vm.sh):
