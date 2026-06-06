@@ -11,6 +11,11 @@ If you'd rather install Windows interactively in UTM instead of building
 via Packer, that path is at the bottom — but the Packer build is the
 recommended primary path, since clones share the same provisioner state.
 
+> For an **automated** clone with a per-VM login injected on first boot
+> (no OOBE clicking), use `just run-windows --seed` or `just spawn
+> windows` instead — see [`cloning-windows.md`](cloning-windows.md). This
+> doc is for hands-on UTM/qemu use.
+
 ## Why UTM at all (vs Tart)
 
 Tart can't host Win11 — three layered blockers (no Windows VM

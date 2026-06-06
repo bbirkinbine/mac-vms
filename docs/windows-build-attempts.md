@@ -341,6 +341,32 @@ run that produced the first working artifact:
 
 ---
 
+## 2026-06-06 follow-up — provisioner elevation (sixth wall)
+
+When the `20-harden` and `30-install-firstboot-seed` provisioners were
+fleshed out (they had been no-op stubs), the build began failing at
+`20-harden`:
+
+```text
+Add-WindowsCapability : Access is denied.
+```
+
+The 2026-05-13 "working" build only ever ran provisioners that touched
+the registry/filesystem, which succeed over a plain WinRM token. DISM
+online servicing (`Add-WindowsCapability -Online` for OpenSSH.Server)
+needs a **full elevated token**, which the bare WinRM network logon
+doesn't carry — even as the built-in Administrator. Fix: set
+`elevated_user`/`elevated_password` on both `powershell` provisioner
+blocks in `windows.pkr.hcl` (Packer then runs each script via a scheduled
+task with the elevated token), matching the homelab Windows base. With
+that, the full chain (00→15→20→30→99) completes and sysprep generalizes;
+verified end-to-end at ~15 min. The per-VM seed/identity flow
+(`FirstBootSeed`) and multi-instance fleet (`scripts/spawn-windows.sh`)
+were added and verified in the same session — see
+[`cloning-windows.md`](cloning-windows.md).
+
+---
+
 ## Fallback path if injection ever regresses
 
 The **custom install ISO** route remains the documented escape hatch if

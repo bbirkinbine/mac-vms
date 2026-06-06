@@ -25,14 +25,14 @@ the Windows analogue of the Linux `cidata.iso`.
 
 ## Mental model — three layers
 
-The Linux pipelines have all three layers wired. Windows has the first
-two; the third is the open work.
+All three layers are wired, the same as the Linux pipelines (just under
+qemu instead of Tart).
 
 | Layer | What | Where | Status |
 | --- | --- | --- | --- |
 | 1. **Packer** | Sysprep'd Win11 ARM64 qcow2 | [`packer/windows-11-arm64/output-windows-11-arm64/`](../packer/windows-11-arm64/) | Working |
-| 2. **Clone** | UTM clone or `qemu-img create -b <base>.qcow2 -F qcow2 new.qcow2` | UTM or shell | Working |
-| 3. **Per-VM identity injection** | hostname / user / SSH key applied on first boot | JSON seed CD + the in-image `FirstBootSeed` task | Built, not yet verified — see [Seeded flow](#seeded-flow-recommended) |
+| 2. **Clone** | `just spawn windows` / `just run-windows`, or a manual `qemu-img create -b <base>.qcow2 -F qcow2` / UTM clone | Justfile, shell, or UTM | Working |
+| 3. **Per-VM identity injection** | hostname / user / SSH key applied on first boot | JSON seed CD + the in-image `FirstBootSeed` task | Working (verified 2026-06-06) — see [Seeded flow](#seeded-flow-recommended) |
 
 Why the Tart-based Linux path can't host Windows here: three layered
 blockers (no Windows VM config in Tart's source, no TPM in Apple
@@ -140,13 +140,23 @@ WINVM_WINDOWS_1_PASSWORD='...'
 WINVM_WINDOWS_2_PASSWORD='...'
 ```
 
-### Networking: why per-VM SSH ports
+### Networking: why per-VM SSH ports (and not DHCP like Linux)
 
-By default the fleet uses qemu **user-mode NAT**: every VM shares the
-host's loopback IP, so each one's guest `:22`/`:3389` is forwarded to a
-distinct host port, scanned from SSH `2222+`, RDP `13389+`, VNC `5950+`.
+This differs from the Linux pipelines, and the reason is the hypervisor.
+Tart (Ubuntu/Kali) sets up Apple `vmnet` shared networking for you, so
+each Linux VM gets its own DHCP IP and `tart ip <name>` finds it — for
+free, no sudo, because Tart holds the vmnet entitlement. Windows runs
+under raw qemu, whose two macOS options are user-mode NAT (no privileges)
+or vmnet (own IP, but qemu can only open it as **root**). The fleet
+defaults to NAT so `just spawn windows` stays sudo-free like its Linux
+sibling — the cost is the localhost port-offsets below.
+
+By default, then, the fleet uses qemu **user-mode NAT**: every VM shares
+the host's loopback IP, so each one's guest `:22`/`:3389` is forwarded to
+a distinct host port, scanned from SSH `2222+`, RDP `13389+`, VNC `5950+`.
 A host port binds once, so the VMs can't share `:22` — hence the offsets.
-No privileges needed. After first boot (a few minutes):
+(The Packer *build* uses the same user-mode networking, forwarding WinRM
+to an auto-picked host port.) After first boot (a few minutes):
 
 ```bash
 ssh admin@127.0.0.1 -p 2222      # windows-1   (key login; password in .env.windows-vms for RDP)

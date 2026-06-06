@@ -70,7 +70,7 @@ When the user kicks off scaffolding, produce the following in one pass. Stop and
    - `windows.pkr.hcl` — single `qemu` source (not `tart-cli` — Tart can't host Windows; see the "Decision history" section below). Targets the public Win11 24H2 ARM64 ISO from Microsoft. `qemu_binary` points at a wrapper script (`scripts/qemu-with-tpm.sh`) that injects TPM + ramfb + USB + usb-storage CD rewrites.
    - `Autounattend.xml` — fresh, ARM64-targeted. **Do not copy the homelab `Autounattend.xml`**; it's x86_64-specific (driver paths, SKU index, partition layout). The *philosophy* of the homelab Windows provisioners (Defender tuning, OneDrive removal, sysprep at the end) carries over.
    - `drivers/` — populated at build time by the wrapper from `virtio-win.iso`. Staging tree is gitignored; `.gitkeep` + `README.md` are tracked.
-   - `provision/` — five PowerShell scripts (00 wait-for-winrm, 15 cleanup, 20 harden [stub], 30 cloudbase-init [stub], 99 sysprep).
+   - `provision/` — five PowerShell scripts (00 wait-for-winrm, 15 cleanup, 20 harden, 30 install-firstboot-seed, 99 sysprep). 20/30 began as stubs; 20 now enables RDP+OpenSSH and 30 installs the FirstBootSeed per-VM identity consumer (the ARM-native cloudbase-init replacement).
    - `variables.pkr.hcl`, `README.md` — same shape as the Ubuntu directory.
 6. **`scripts/`**
    - `build-ubuntu.sh` — env-driven wrapper that sources `.env.local`, validates Tart + Packer are installed, runs `packer init` / `validate` / `build`. Same shape as homelab's `build-pve.sh`: fail loud, validate preconditions up front, no branching dispatcher.
