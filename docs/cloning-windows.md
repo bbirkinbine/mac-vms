@@ -169,11 +169,17 @@ teardown needs `sudo just cleanup-windows-vms`.
 
 ### List and tear down
 
+Windows VMs are plain qemu processes, not Tart-managed, so `tart list`
+can't see them — use `just list-windows` (and `just list` shows both
+Tart VMs and Windows instances):
+
 ```bash
-just cleanup-windows-vms --dry-run   # list instances + ports/mode + running state
-just cleanup-windows-vms             # stop qemu/swtpm, remove disks, prune .env entries
+just list-windows                        # name, running state, ssh/RDP access, VNC
+just list                                # Tart VMs + Windows instances together
+
+just cleanup-windows-vms                 # stop qemu/swtpm, remove disks, prune .env
 just cleanup-windows-vms -n windows-2    # just one
-just cleanup-vms windows --dry-run   # same thing via the unified verb
+just cleanup-vms windows                 # same teardown via the unified verb
 ```
 
 Per-instance state (disk, NVRAM, cidata, pidfiles, logs, `meta`) lives

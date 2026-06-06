@@ -237,10 +237,13 @@ EOF
     [[ -n "${ip}" ]] && break
     sleep 1
   done
+  # Print the copy-pasteable, IP-stable form: $(tart ip <name>) re-resolves
+  # the lease each run, so it keeps working after a DHCP change. Show the
+  # current IP alongside for reference.
   if [[ -n "${ip}" ]]; then
-    SPAWNED_LINES+=("  ${name} → ssh ${DISTRO}@${ip}")
+    SPAWNED_LINES+=("  ${name} (${ip}) → ssh ${DISTRO}@\$(tart ip ${name})")
   else
-    SPAWNED_LINES+=("  ${name} (no IP yet; try 'tart ip ${name}' in a moment)")
+    SPAWNED_LINES+=("  ${name} → ssh ${DISTRO}@\$(tart ip ${name})   (still leasing; give it a moment)")
   fi
 }
 

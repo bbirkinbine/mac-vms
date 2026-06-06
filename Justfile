@@ -109,9 +109,16 @@ ps-lint:
 
 # --- housekeeping ------------------------------------------------------------
 
-# List Tart VMs (built images + local working copies).
+# List everything running: Tart VMs (ubuntu/kali) + Windows qemu instances.
 list:
-    tart list
+    @tart list
+    @echo
+    @./scripts/list-windows-vms.sh
+
+# List just the Windows qemu instances (name, running state, ssh/RDP access).
+# Windows VMs aren't Tart-managed, so `tart list` can't see them.
+list-windows:
+    @./scripts/list-windows-vms.sh
 
 # Delete a built image by name. Usage: just delete ubuntu-24-04-arm64-base
 delete name:
