@@ -144,7 +144,16 @@ if [[ -n "$SEED" ]]; then
   fi
   SEED_ABS="$(cd "$(dirname "$SEED")" && pwd)/$(basename "$SEED")"
   echo "==> building cidata.iso from ${SEED}"
-  "${REPO_ROOT}/packer/windows-11-arm64/seed/build-cidata.sh" "$SEED_ABS" >/dev/null
+  # Don't swallow build-cidata's output: for a single interactive VM we want
+  # its summary on the terminal — including "==> generated admin password: …"
+  # when the seed omits a password (otherwise that password is unrecoverable;
+  # only key login would work). Capture so a failure is still surfaced.
+  bc_out="$("${REPO_ROOT}/packer/windows-11-arm64/seed/build-cidata.sh" "$SEED_ABS" 2>&1)" || {
+    printf '%s\n' "$bc_out" >&2
+    echo "ERROR: build-cidata.sh failed" >&2
+    exit 1
+  }
+  printf '%s\n' "$bc_out" | grep -E '^==>' || true
   CIDATA="${REPO_ROOT}/packer/windows-11-arm64/output-cidata/cidata.iso"
   [[ -f "$CIDATA" ]] || { echo "ERROR: build-cidata.sh produced no ${CIDATA}" >&2; exit 1; }
   SEED_DEVICE_ARGS=(
