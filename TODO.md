@@ -3,25 +3,21 @@
 Open work and known gaps in mac-vms. Keep this short — entries should either
 get fixed or move into a doc with proper background.
 
-## Windows — seed flow built, needs an end-to-end verification run
+## Windows — per-VM seed flow (verified 2026-06-06)
 
-Per-VM identity injection is now implemented for Windows (the
-cloudbase-init analogue): `provision/30-install-firstboot-seed.ps1`
+Per-VM identity injection for Windows (the cloudbase-init analogue) is
+implemented and verified end-to-end: `provision/30-install-firstboot-seed.ps1`
 installs a `FirstBootSeed` scheduled task that reads a JSON seed off an
-attached CD, and `seed/build-cidata.sh` produces that CD on the Mac.
+attached CD, `seed/build-cidata.sh` produces that CD on the Mac, and
 `provision/99-sysprep.ps1` gates the Administrator lockdown on a seed
-login existing. See [`docs/cloning-windows.md`](docs/cloning-windows.md)
+login existing. `just run-windows --seed <file>` drives clone + seed +
+boot. Verified on a clean build: seeded user created in Administrators,
+SSH key injected, build Administrator disabled, both tasks self-destruct,
+SSH login works. See [`docs/cloning-windows.md`](docs/cloning-windows.md)
 and [`packer/windows-11-arm64/seed/README.md`](packer/windows-11-arm64/seed/README.md).
 
-What's left:
+Known limitation:
 
-- **No end-to-end verification yet.** `just clean && just build-windows`,
-  then clone + attach a `cidata.iso` + boot + confirm the seeded user
-  logs in (console/RDP/SSH) and the build Administrator is disabled. The
-  scripts are written and `packer validate` passes, but the first real
-  run will likely need debugging — the `FirstBootSeed` ↔
-  `PackerBuildCleanup` AtStartup handshake and the CD enumeration timing
-  are the most likely soft spots.
 - **Standard (non-admin) seed users:** SSH keys are only applied if the
   profile already exists at first boot (it usually won't). Admin users
   use `administrators_authorized_keys` and are unaffected. Revisit if a

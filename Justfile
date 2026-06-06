@@ -49,9 +49,13 @@ cleanup-vms distro *FLAGS:
 # artifact is good without UTM in the way. Defaults to a COW clone so the
 # base qcow2 stays sysprep-fresh.
 #
-#   just run-windows          # COW clone (reuses run.qcow2 if present)
-#   just run-windows --fresh  # wipe COW + NVRAM, start clean
-#   just run-windows --base   # boot base qcow2 directly (dirties it)
+#   just run-windows                              # COW clone (reuses run.qcow2 if present)
+#   just run-windows --fresh                      # wipe COW + NVRAM, start clean
+#   just run-windows --base                       # boot base qcow2 directly (dirties it)
+#   just run-windows --seed seed/lab-seed.json    # attach a seed CD; FirstBootSeed
+#                                                 # injects the login (SSH on host :2222,
+#                                                 # RDP on :13389). Seeded analogue of
+#                                                 # `just spawn` for Linux.
 run-windows *FLAGS:
     @./scripts/run-windows.sh {{FLAGS}}
 

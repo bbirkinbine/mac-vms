@@ -117,9 +117,15 @@ Mirrors the homelab Windows base structure
 | --- | --- | --- |
 | `00-wait-for-winrm.ps1` | Ported as-is from homelab | Ready |
 | `15-windows-cleanup.ps1` | Ported as-is (registry / DISM — arch-agnostic) | Ready |
-| `20-harden.ps1` | Ported from homelab, trimmed to RDP (NLA) + OpenSSH Server | Ready |
-| `30-install-firstboot-seed.ps1` | ARM-native replacement for cloudbase-init: installs the `FirstBootSeed` task that injects a per-VM login from an attached seed CD | Ready (built; not yet verified on a clean clone) |
-| `99-sysprep.ps1` | Ported from homelab (`processorArchitecture="arm64"`); cleanup now waits on the `FirstBootSeed` marker and refuses to disable Administrator on an unseeded clone | Ready (cleanup task + sysprep) |
+| `20-harden.ps1` | Ported from homelab, trimmed to RDP (NLA) + OpenSSH Server | Ready (verified: OpenSSH runs, needs elevated provisioner) |
+| `30-install-firstboot-seed.ps1` | ARM-native replacement for cloudbase-init: installs the `FirstBootSeed` task that injects a per-VM login from an attached seed CD | Ready (verified end-to-end on a clean clone 2026-06-06) |
+| `99-sysprep.ps1` | Ported from homelab (`processorArchitecture="arm64"`); cleanup now waits on the `FirstBootSeed` marker and refuses to disable Administrator on an unseeded clone | Ready (verified: Administrator disabled only after seed login lands) |
+
+Provisioners run with `elevated_user`/`elevated_password` set on both
+provisioner blocks — DISM online servicing (`Add-WindowsCapability` for
+OpenSSH.Server in `20-harden`) returns "Access is denied" under the bare
+WinRM token, even as the built-in Administrator. See
+[`windows.pkr.hcl`](windows.pkr.hcl).
 
 The per-VM identity flow (seed format, `build-cidata.sh`, the
 `FirstBootSeed` ↔ `PackerBuildCleanup` handshake) is documented in

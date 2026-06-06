@@ -12,10 +12,19 @@
 # copy (`run-vars.fd`) so reruns don't dirty the base artifact. The base
 # qcow2 stays sysprep-fresh for cloning into other targets.
 #
+# With --seed, builds a cidata.iso from a seed JSON (via seed/build-cidata.sh)
+# and attaches it as a usb-storage CD so the in-image FirstBootSeed task
+# injects the per-VM login on first boot. This is the seeded analogue of the
+# Linux `just spawn` flow — see docs/cloning-windows.md. Host ports are
+# forwarded for SSH (2222->22) and RDP (13389->3389) so a seeded clone is
+# reachable without console access.
+#
 # Usage:
-#   ./scripts/run-windows.sh             # boot existing or freshly-created COW
-#   ./scripts/run-windows.sh --fresh     # wipe COW + NVRAM and start clean
-#   ./scripts/run-windows.sh --base      # boot the base qcow2 directly (DIRTIES IT)
+#   ./scripts/run-windows.sh                      # boot existing or fresh COW
+#   ./scripts/run-windows.sh --fresh              # wipe COW + NVRAM, start clean
+#   ./scripts/run-windows.sh --base               # boot base qcow2 directly (DIRTIES IT)
+#   ./scripts/run-windows.sh --seed <seed.json>   # attach a seed CD (implies a clone)
+#   ./scripts/run-windows.sh --fresh --seed seed/lab-seed.json
 
 set -euo pipefail
 
@@ -28,17 +37,34 @@ BASE_EFIVARS="${OUTPUT_DIR}/efivars.fd"
 # ---- argument parsing ------------------------------------------------------
 
 mode="cow"
-for arg in "$@"; do
-  case "$arg" in
+SEED=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --fresh) mode="fresh" ;;
     --base)  mode="base"  ;;
+    --seed)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --seed needs a path to a seed JSON" >&2; exit 2; }
+      SEED="$1"
+      ;;
+    --seed=*) SEED="${1#--seed=}" ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
+    *) echo "ERROR: unknown arg: $1" >&2; exit 2 ;;
   esac
+  shift
 done
+
+# --seed against --base is a footgun: the seed's FirstBootSeed + cleanup run
+# once on first boot, and --base dirties the sysprep'd artifact. Require a clone.
+if [[ -n "$SEED" && "$mode" == "base" ]]; then
+  echo "ERROR: --seed cannot be combined with --base (it would consume the" >&2
+  echo "       sysprep'd base on first boot). Use --seed with the default COW" >&2
+  echo "       clone, optionally with --fresh." >&2
+  exit 2
+fi
 
 # ---- preconditions ---------------------------------------------------------
 
@@ -97,6 +123,34 @@ case "$mode" in
     fi
     ;;
 esac
+
+# ---- seed CD (optional) ----------------------------------------------------
+#
+# Build a cidata.iso from the seed JSON and attach it as a usb-storage CD
+# (ARM `virt` has no IDE/SATA, same constraint the build hit). The in-image
+# FirstBootSeed task reads windows-seed.json off it on first boot. We also
+# forward host ports for SSH/RDP so a seeded clone is reachable headlessly.
+
+SEED_DEVICE_ARGS=()
+HOSTFWD=""
+if [[ -n "$SEED" ]]; then
+  if [[ ! -f "$SEED" ]]; then
+    echo "ERROR: seed file not found: $SEED" >&2
+    exit 1
+  fi
+  SEED_ABS="$(cd "$(dirname "$SEED")" && pwd)/$(basename "$SEED")"
+  echo "==> building cidata.iso from ${SEED}"
+  "${REPO_ROOT}/packer/windows-11-arm64/seed/build-cidata.sh" "$SEED_ABS" >/dev/null
+  CIDATA="${REPO_ROOT}/packer/windows-11-arm64/output-cidata/cidata.iso"
+  [[ -f "$CIDATA" ]] || { echo "ERROR: build-cidata.sh produced no ${CIDATA}" >&2; exit 1; }
+  SEED_DEVICE_ARGS=(
+    -drive "file=${CIDATA},media=cdrom,if=none,id=seedcd"
+    -device "usb-storage,drive=seedcd,bus=usb.0"
+  )
+  HOSTFWD=",hostfwd=tcp::2222-:22,hostfwd=tcp::13389-:3389"
+  echo "==> seed CD attached. After first boot:"
+  echo "    ssh -p 2222 <seed-user>@127.0.0.1     (RDP: host port 13389)"
+fi
 
 # ---- swtpm -----------------------------------------------------------------
 #
@@ -158,6 +212,7 @@ exec qemu-system-aarch64 \
   -device "usb-kbd,bus=usb.0" \
   -device "usb-tablet,bus=usb.0" \
   -drive "file=${QCOW2},if=virtio,format=qcow2" \
+  "${SEED_DEVICE_ARGS[@]}" \
   -device "virtio-net-pci,netdev=net0" \
-  -netdev "user,id=net0" \
+  -netdev "user,id=net0${HOSTFWD}" \
   -display "cocoa,zoom-to-fit=on"

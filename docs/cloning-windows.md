@@ -1,16 +1,18 @@
 # Cloning the Windows base image and creating a per-VM identity
 
-> ## Status: built, not yet verified on a clean clone
+> ## Status: verified end-to-end (2026-06-06)
 >
-> As of 2026-06-06 the per-VM identity flow is **implemented** but has
-> not been walked end-to-end on a fresh build + clone. The pieces:
-> `provision/30-install-firstboot-seed.ps1` installs a `FirstBootSeed`
-> scheduled task into the image; `seed/build-cidata.sh` builds the seed
-> CD; `provision/99-sysprep.ps1` coordinates so the build Administrator
-> is only locked down after a seed login lands. Treat the steps below as
-> the design of record, but expect to debug the first real run — the
-> Linux pipelines ([Ubuntu](cloning-ubuntu.md), [Kali](cloning-kali.md))
-> remain the battle-tested reference.
+> The per-VM identity flow has been walked end-to-end on a fresh
+> `just build-windows` artifact: a COW clone booted with a seed CD,
+> `FirstBootSeed` created the seeded user (in Administrators) and
+> installed its SSH key, `PackerBuildCleanup` then disabled the build
+> Administrator, both tasks self-destructed, and the seeded user logged
+> in over SSH using the injected key. The pieces:
+> `provision/30-install-firstboot-seed.ps1` installs the `FirstBootSeed`
+> task; `seed/build-cidata.sh` builds the seed CD; `provision/99-sysprep.ps1`
+> coordinates so the build Administrator is only locked down after a seed
+> login lands. `just run-windows --seed <file>` drives the whole clone +
+> seed + boot the repo way.
 
 This is the runbook for what happens **after** `just build-windows`
 finishes — how to consume the sysprep'd qcow2 and get a usable VM.
@@ -42,8 +44,8 @@ full diagnostic story. Consumption is via UTM or
 
 ## Seeded flow (recommended)
 
-This is the automated path: build a seed CD, attach it to a clone, get
-a configured login with no OOBE clicking.
+This is the automated path: write a seed, boot a clone with it attached,
+get a configured login with no OOBE clicking.
 
 ```bash
 just build-windows   # if you haven't already
@@ -51,11 +53,26 @@ just build-windows   # if you haven't already
 cd packer/windows-11-arm64
 cp seed/lab-seed.example.json seed/lab-seed.json
 $EDITOR seed/lab-seed.json        # set username, password, hostname, SSH key
-./seed/build-cidata.sh            # -> output-cidata/cidata.iso
+
+# From the repo root: build the seed CD, COW-clone the base, attach the
+# CD, forward SSH (host :2222) + RDP (host :13389), and boot.
+just run-windows --fresh --seed packer/windows-11-arm64/seed/lab-seed.json
 ```
 
-Then boot a **clone** of the base qcow2 with `cidata.iso` attached as a
-CD-ROM:
+`just run-windows --seed` is the seeded analogue of the Linux `just spawn`
+flow: it runs `seed/build-cidata.sh` for you, attaches the resulting
+`cidata.iso` as a `usb-storage` CD (ARM `virt` has no IDE/SATA), and
+forwards host ports so the clone is reachable without console access. Once
+first boot finishes:
+
+```bash
+ssh -p 2222 <seed-user>@127.0.0.1        # or RDP to 127.0.0.1:13389
+```
+
+### Doing it by hand (UTM, or manual qemu)
+
+If you'd rather drive it yourself — build the CD with
+`./seed/build-cidata.sh` (→ `output-cidata/cidata.iso`) and attach it:
 
 UTM path:
 
@@ -68,11 +85,7 @@ open -a UTM
 # Play.
 ```
 
-qemu path — the seed CD must be a `usb-storage` device, same as the
-build (ARM `virt` has no IDE/SATA). Add to your
-`qemu-system-aarch64` invocation (see
-[`windows-utm.md`](windows-utm.md#running-the-qcow2-directly-via-qemu)
-for the base command):
+Manual qemu — the seed CD must be a `usb-storage` device:
 
 ```text
 -drive file=output-cidata/cidata.iso,media=cdrom,if=none,id=seedcd \
