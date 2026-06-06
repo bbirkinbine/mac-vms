@@ -44,20 +44,22 @@ spawn distro *FLAGS:
 cleanup-vms distro *FLAGS:
     @./scripts/cleanup-vms.sh {{distro}} {{FLAGS}}
 
-# Spawn one or more Windows 11 clones from the base qcow2, each headless
-# under qemu with its own COW disk, seed CD, and SSH/RDP/VNC ports. The
-# Windows analogue of `just spawn` (Tart can't host Windows). Generated
-# admin passwords are written to .env.windows-vms, not stdout.
-#   just spawn-windows               # win-<N>
-#   just spawn-windows -c 3          # three at once
-#   just spawn-windows -n devbox     # explicit name
-#   just spawn-windows --seed packer/windows-11-arm64/seed/lab-seed.json
+# Backing recipe for `just spawn windows` — use that; this is [private] (hidden
+# from `just --list`) but still callable. Spawns Windows 11 clones from the base
+# qcow2, each headless under qemu with its own COW disk, seed CD, and
+# SSH/RDP/VNC ports. Generated admin passwords go to .env.windows-vms, not stdout.
+#   just spawn windows               # windows-<N>
+#   just spawn windows -c 3          # three at once
+#   just spawn windows -n devbox     # explicit name
+#   just spawn windows --seed packer/windows-11-arm64/seed/lab-seed.json
+[private]
 spawn-windows *FLAGS:
     @./scripts/spawn-windows.sh {{FLAGS}}
 
-# Stop + delete Windows instances created by `just spawn-windows`.
-# Interactive confirmation; -y to skip, --dry-run to preview, -n <name>
-# for a single instance.
+# Backing recipe for `just cleanup-vms windows` — use that; this is [private].
+# Stop + delete Windows instances created by spawn. Interactive confirmation;
+# -y to skip, --dry-run to preview, -n <name> for a single instance.
+[private]
 cleanup-windows-vms *FLAGS:
     @./scripts/cleanup-windows-vms.sh {{FLAGS}}
 
@@ -120,9 +122,29 @@ list:
 list-windows:
     @./scripts/list-windows-vms.sh
 
-# Delete a built image by name. Usage: just delete ubuntu-24-04-arm64-base
+# Delete by name — aware of both backends. A Windows fleet instance (qemu)
+# is stopped + removed; a Tart VM/image (ubuntu/kali bases + clones) is
+# `tart delete`d. The Windows base qcow2 is a file, not a managed VM — the
+# message points you at `just clean` for that.
+#   just delete ubuntu-24-04-arm64-base   # Tart image
+#   just delete windows-3                 # Windows fleet instance
+[doc('Delete a Tart VM/image or a Windows fleet instance, by name')]
 delete name:
-    tart delete {{name}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    name='{{name}}'
+    if [[ -d "packer/windows-11-arm64/output-windows-11-arm64/instances/${name}" ]]; then
+        ./scripts/cleanup-windows-vms.sh -n "${name}" -y
+    elif tart list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "${name}"; then
+        tart delete "${name}"
+    else
+        echo "ERROR: '${name}' is neither a Windows fleet instance nor a Tart VM/image." >&2
+        echo "  Tart VMs/images:     just list        (ubuntu/kali bases + clones)" >&2
+        echo "  Windows instances:   just list-windows" >&2
+        echo "  Windows base qcow2:  it's a file, not a managed VM — remove with 'just clean'" >&2
+        echo "                       (wipes all output-*/) or rm the qcow2 directly." >&2
+        exit 1
+    fi
 
 # Wipe Packer caches and any output-* directories. Does NOT touch ~/.tart
 # (use `just delete` or `tart delete` for VM images).
