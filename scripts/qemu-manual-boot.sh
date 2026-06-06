@@ -123,7 +123,7 @@ echo "         into the unattend CD by 'just build-windows' only. For manual-boo
 echo "         you go straight at virtio-win.iso on E:.)"
 echo
 echo "      Other diagnostics:"
-echo "        drvload E:\\viostor\\w11\\ARM64\\viostor.inf  — test Secure Boot accept"
+printf '%s\n' "        drvload E:\\viostor\\w11\\ARM64\\viostor.inf  — test Secure Boot accept"
 echo "        diskpart → rescan → list disk             — re-probe disks after drvload"
 echo "        wpeutil reboot                            — cleanly restart WinPE"
 echo

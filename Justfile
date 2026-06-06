@@ -72,8 +72,19 @@ fmt:
 
 # Syntax-check the wrapper scripts. shellcheck must be on PATH.
 shell-lint:
-    bash -n scripts/*.sh
-    shellcheck scripts/*.sh
+    bash -n scripts/*.sh packer/*/seed/*.sh
+    shellcheck scripts/*.sh packer/*/seed/*.sh
+
+# Parse-check the Windows PowerShell provisioners (incl. the embedded
+# here-string bodies that get written to clones). Skips gracefully if pwsh
+# isn't installed — `brew install powershell` to enable. See
+# scripts/lint-powershell.ps1.
+ps-lint:
+    @if command -v pwsh >/dev/null 2>&1; then \
+        pwsh -NoProfile -File scripts/lint-powershell.ps1; \
+    else \
+        echo "pwsh not installed — skipping PowerShell parse-check (brew install powershell)"; \
+    fi
 
 # --- housekeeping ------------------------------------------------------------
 

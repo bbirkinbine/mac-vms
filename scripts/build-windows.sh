@@ -174,7 +174,7 @@ WINPE_DRIVERS=(viostor vioscsi NetKVM)
 #   /<driver>/w11/ARM64/<driver>.{cat,inf,sys}
 # Where w11 is the Win11/Server 2022 driver class. The .cat file is the
 # Microsoft-signed catalog — Secure Boot rejects the load without it.
-echo "==> staging ARM64 drivers into ${DRIVERS_STAGING#${REPO_ROOT}/}"
+echo "==> staging ARM64 drivers into ${DRIVERS_STAGING#"${REPO_ROOT}"/}"
 missing=()
 for d in "${WINPE_DRIVERS[@]}"; do
   src="${VIRTIO_MOUNT}/${d}/w11/ARM64"

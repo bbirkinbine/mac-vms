@@ -147,6 +147,10 @@ packer validate .
 bash -n scripts/*.sh
 shellcheck scripts/*.sh   # if installed
 
+# PowerShell (Windows provisioners — parses outer scripts AND the
+# embedded here-string bodies that run on clones). Skips if pwsh absent.
+just ps-lint              # brew install powershell to enable
+
 # XML
 xmllint --noout packer/windows-11-arm64/Autounattend.xml
 ```
