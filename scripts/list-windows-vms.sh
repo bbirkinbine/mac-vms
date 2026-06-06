@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
-# list-windows-vms.sh — show the Windows instances created by
-# scripts/spawn-windows.sh and whether each is running. Windows VMs are plain
-# qemu processes (no Tart), so `tart list` / `just list` can't see them; this
-# is their equivalent.
+# list-windows-vms.sh — show whether the Windows base image is built (and thus
+# ready to `just spawn windows`) plus any running fleet instances. Neither
+# shows up in `tart list`: the base is a qcow2 file and instances are plain
+# qemu processes, not Tart-managed.
 #
 # Usage: ./scripts/list-windows-vms.sh   (or `just list-windows`)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUTPUT_DIR="${REPO_ROOT}/packer/windows-11-arm64/output-windows-11-arm64"
+BASE_QCOW2="${OUTPUT_DIR}/windows-11-arm64-base.qcow2"
 INSTANCES_DIR="${REPO_ROOT}/packer/windows-11-arm64/run/instances"
 
-echo "Windows instances (qemu):"
+# Base image — the "can I skip just build-windows and go straight to spawn?"
+# signal. Built => clone/spawn away; missing => build it first.
+echo "Windows base image:"
+if [[ -f "$BASE_QCOW2" ]]; then
+  size="$(du -h "$BASE_QCOW2" 2>/dev/null | cut -f1 | tr -d ' ')"
+  echo "  BUILT (${size}) — ready to clone:  just spawn windows"
+else
+  echo "  NOT BUILT — run:  just build-windows"
+fi
+echo
 
+echo "Windows instances (qemu):"
 if [[ ! -d "$INSTANCES_DIR" ]] || [[ -z "$(ls -A "$INSTANCES_DIR" 2>/dev/null)" ]]; then
   echo "  (none — spawn with: just spawn windows)"
   exit 0
