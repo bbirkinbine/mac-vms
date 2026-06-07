@@ -116,9 +116,12 @@ for name in "${TARGETS[@]}"; do
   echo "==> stopping + deleting ${name}"
   kill_pidfile "${dir}/qemu.pid"
   kill_pidfile "${dir}/swtpm.pid"
-  # Remove the swtpm socket recorded in meta (best effort).
+  # Remove the swtpm + QMP sockets recorded in meta (best effort; both live in
+  # /tmp, so they'd otherwise linger as stale entries after the dir is gone).
   sock="$(sed -n 's/^tpm_sock=//p' "${dir}/meta" 2>/dev/null || true)"
   [[ -n "$sock" ]] && rm -f "$sock"
+  qmp_sock="$(sed -n 's/^qmp_sock=//p' "${dir}/meta" 2>/dev/null || true)"
+  [[ -n "$qmp_sock" ]] && rm -f "$qmp_sock"
   # Prune this instance's password entry from the env file (comment + line).
   if [[ -f "$ENV_FILE" ]]; then
     token="$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')"; token="${token%_}"

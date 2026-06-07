@@ -143,6 +143,8 @@ delete name:
     if [[ -d "packer/windows-11-arm64/run/instances/${name}" ]]; then
         ./scripts/cleanup-windows-vms.sh -n "${name}" -y
     elif tart list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "${name}"; then
+        # tart can't delete a running VM, so stop it first (no-op if stopped).
+        tart stop "${name}" >/dev/null 2>&1 || true
         tart delete "${name}"
     else
         echo "ERROR: '${name}' is neither a Windows fleet instance nor a Tart VM/image." >&2
@@ -150,6 +152,53 @@ delete name:
         echo "  Windows instances:   just list-windows" >&2
         echo "  Windows base qcow2:  it's a file, not a managed VM — remove with 'just clean'" >&2
         echo "                       (wipes all output-*/) or rm the qcow2 directly." >&2
+        exit 1
+    fi
+
+# Stop a VM but KEEP it: disk/state persist, `just start <name>` resumes. A Tart
+# clone gets a graceful `tart stop`; a Windows instance gets an ACPI power-off
+# via QMP (add --force through the script for a hard stop). Named throwaways and
+# bases alike. To remove for good instead, use `just delete` / `just cleanup-vms`.
+#   just stop ubuntu-1
+#   just stop windows-3
+[doc('Stop (keep) a VM by name: stop <tart-vm|windows-instance>')]
+stop name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    name='{{name}}'
+    if [[ -d "packer/windows-11-arm64/run/instances/${name}" ]]; then
+        ./scripts/stop-windows.sh -n "${name}"
+    elif tart list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "${name}"; then
+        tart stop "${name}"
+    else
+        echo "ERROR: '${name}' is neither a Windows fleet instance nor a Tart VM." >&2
+        echo "  Tart VMs:           just list" >&2
+        echo "  Windows instances:  just list-windows" >&2
+        exit 1
+    fi
+
+# Resume a STOPPED VM from its persisted disk — the counterpart to `just stop`
+# (and to powering a Windows guest off from inside). A Tart clone is re-run
+# headless + detached; a Windows instance relaunches under qemu from its own
+# disk/NVRAM/TPM (no fresh clone or seed). Recorded ports/display are restored.
+#   just start ubuntu-1
+#   just start windows-3
+[doc('Start (resume) a stopped VM by name: start <tart-vm|windows-instance>')]
+start name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    name='{{name}}'
+    if [[ -d "packer/windows-11-arm64/run/instances/${name}" ]]; then
+        ./scripts/spawn-windows.sh --start "${name}"
+    elif tart list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "${name}"; then
+        # Detach like spawn-vm.sh so the resumed VM outlives this recipe shell.
+        nohup tart run --no-graphics "${name}" </dev/null >/dev/null 2>&1 &
+        disown
+        echo "==> started ${name} (tart, headless). SSH: ssh <user>@\$(tart ip ${name})"
+    else
+        echo "ERROR: '${name}' is neither a Windows fleet instance nor a Tart VM." >&2
+        echo "  Tart VMs:           just list" >&2
+        echo "  Windows instances:  just list-windows" >&2
         exit 1
     fi
 
