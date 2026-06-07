@@ -25,6 +25,9 @@
 #   ./scripts/run-windows.sh --base               # boot base qcow2 directly (DIRTIES IT)
 #   ./scripts/run-windows.sh --seed <seed.json>   # attach a seed CD (implies a clone)
 #   ./scripts/run-windows.sh --fresh --seed seed/lab-seed.json
+#   ./scripts/run-windows.sh --cpus 8             # vCPUs (default 4)
+#   ./scripts/run-windows.sh --mem 32G            # RAM, qemu -m form (default 16384 MiB)
+#   ./scripts/run-windows.sh --disk-size 128G     # grow the COW disk (ignored with --base)
 
 set -euo pipefail
 
@@ -41,6 +44,9 @@ BASE_EFIVARS="${OUTPUT_DIR}/efivars.fd"
 
 mode="cow"
 SEED=""
+CPUS=4
+MEM=16384      # qemu -m form: bare number is MiB; "16G" also works.
+DISK_SIZE=""   # empty = inherit base virtual size; else qemu-img resize the COW.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fresh) mode="fresh" ;;
@@ -51,14 +57,48 @@ while [[ $# -gt 0 ]]; do
       SEED="$1"
       ;;
     --seed=*) SEED="${1#--seed=}" ;;
+    --cpus)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --cpus requires a number" >&2; exit 2; }
+      CPUS="$1"
+      ;;
+    --cpus=*) CPUS="${1#--cpus=}" ;;
+    --mem)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --mem requires a value" >&2; exit 2; }
+      MEM="$1"
+      ;;
+    --mem=*) MEM="${1#--mem=}" ;;
+    --disk-size)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --disk-size requires a value (e.g. 128G)" >&2; exit 2; }
+      DISK_SIZE="$1"
+      ;;
+    --disk-size=*) DISK_SIZE="${1#--disk-size=}" ;;
     -h|--help)
-      sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "ERROR: unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+# Hardware-spec validation (same rules as spawn-windows.sh). Strip a trailing
+# "B" so the natural "32GB"/"512MB" form reaches qemu as "32G"/"512M".
+[[ "$CPUS" =~ ^[0-9]+$ && "$CPUS" -ge 1 ]] || { echo "ERROR: --cpus must be a positive integer (got '$CPUS')" >&2; exit 2; }
+MEM="${MEM%[Bb]}"
+[[ "$MEM" =~ ^[0-9]+[MGmg]?$ ]] || { echo "ERROR: --mem must be a qemu -m value, e.g. 8192, 16G, or 16GB (got '$MEM')" >&2; exit 2; }
+if [[ -n "$DISK_SIZE" ]]; then
+  DISK_SIZE="${DISK_SIZE%[Bb]}"
+  [[ "$DISK_SIZE" =~ ^\+?[0-9]+[MGTmgt]$ ]] || { echo "ERROR: --disk-size must carry a unit, e.g. 128G, 128GB, or +64G (got '$DISK_SIZE')" >&2; exit 2; }
+fi
+# --disk-size only applies to a COW clone; --base boots the artifact in place.
+if [[ -n "$DISK_SIZE" && "$mode" == "base" ]]; then
+  echo "ERROR: --disk-size cannot be combined with --base (it would grow the" >&2
+  echo "       build artifact itself). Use the default COW clone." >&2
+  exit 2
+fi
 
 # --seed against --base is a footgun: the seed's FirstBootSeed + cleanup run
 # once on first boot, and --base dirties the sysprep'd artifact. Require a clone.
@@ -120,6 +160,15 @@ case "$mode" in
       qemu-img create -f qcow2 \
         -b "${BASE_QCOW2}" -F qcow2 \
         "${QCOW2}" >/dev/null
+      # Grow the overlay if asked. Only on creation — once run.qcow2 exists a
+      # rerun reuses it as-is (use --fresh to recreate at a new size). Windows
+      # sees the extra space unallocated; extend the partition in-guest.
+      if [[ -n "$DISK_SIZE" ]]; then
+        echo "==> resizing COW disk (${DISK_SIZE}; extend the partition in-Windows)"
+        qemu-img resize "${QCOW2}" "$DISK_SIZE" >/dev/null
+      fi
+    elif [[ -n "$DISK_SIZE" ]]; then
+      echo "==> note: ${QCOW2##*/} already exists; --disk-size ignored (use --fresh to recreate)"
     fi
     if [[ ! -f "${EFIVARS}" ]]; then
       echo "==> seeding NVRAM from ${BASE_EFIVARS##*/}"
@@ -210,11 +259,17 @@ echo
 # NVRAM are the only thing changed; everything else (machine, accel, cpu,
 # tpm, ramfb, USB, virtio-net) is identical so we don't introduce platform
 # drift between "what built it" and "what runs it".
+#
+# Disk tuning (cache=writeback,aio=threads,discard=unmap): writeback lets the
+# host page cache absorb writes (big throughput win; acceptable for a throwaway
+# VM — a host crash could lose unsynced writes); aio=threads is the AIO backend
+# macOS supports (no io_uring); discard=unmap lets the qcow2 reclaim space as
+# Windows TRIMs. Build-time uses defaults — this is a runtime-only speedup.
 exec qemu-system-aarch64 \
   -machine "virt,gic-version=max" \
   -accel hvf \
   -cpu host \
-  -smp 4 -m 8192 \
+  -smp "$CPUS" -m "$MEM" \
   -drive "if=pflash,format=raw,readonly=on,file=${EFI_CODE}" \
   -drive "if=pflash,format=raw,file=${EFIVARS}" \
   -chardev "socket,id=chrtpm,path=${SWTPM_SOCK}" \
@@ -224,7 +279,7 @@ exec qemu-system-aarch64 \
   -device "qemu-xhci,id=usb" \
   -device "usb-kbd,bus=usb.0" \
   -device "usb-tablet,bus=usb.0" \
-  -drive "file=${QCOW2},if=virtio,format=qcow2" \
+  -drive "file=${QCOW2},if=virtio,format=qcow2,cache=writeback,aio=threads,discard=unmap" \
   "${SEED_DEVICE_ARGS[@]}" \
   -device "virtio-net-pci,netdev=net0" \
   -netdev "user,id=net0${HOSTFWD}" \

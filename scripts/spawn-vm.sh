@@ -52,8 +52,7 @@ Usage: $0 <distro> [-c <count>] [-n <name>] [-i <path>]...
 
   distro       Required. One of: ubuntu, kali, windows.
                (windows delegates to scripts/spawn-windows.sh — a qemu
-               fleet manager, since Tart can't host Windows. It accepts
-               the same -c/-n/-i plus Windows-only --seed/--bridged.)
+               fleet manager, since Tart can't host Windows.)
   -c <count>   Number of VMs to spawn (default 1). Each gets the next
                free \`<distro>-N\` suffix. Incompatible with -n.
   -n <name>    Explicit VM name. Skips auto-increment; count implied 1.
@@ -62,12 +61,23 @@ Usage: $0 <distro> [-c <count>] [-n <name>] [-i <path>]...
                suppressed for the generated cidata.
   -h, --help   This message.
 
+Windows-only flags (forwarded to spawn-windows.sh; run that with -h for detail):
+  --headless           No window; serve a VNC display (5950+) instead.
+  --cpus <N>           vCPUs per instance (default 4).
+  --mem <qemu -m>      RAM per instance (default 16384 MiB; 16G also works).
+  --disk-size <size>   Grow each COW disk, e.g. 128G or +64G (qemu-img resize;
+                       extend the partition in-Windows afterwards).
+  --seed <file>        Base seed JSON; hostname overridden per instance.
+  --bridged            Per-VM IP via vmnet on :22/:3389 (needs sudo).
+
 Examples:
   $0 ubuntu
   $0 kali -c 3
   $0 ubuntu -n webhost-01
   $0 kali -i ~/.ssh/recon.pub
-  $0 windows -c 2          # -> spawn-windows.sh
+  $0 windows -c 2                       # -> spawn-windows.sh
+  $0 windows --cpus 8 --mem 32G         # beefier Windows box
+  $0 windows --headless -c 3            # three, VNC-only
 USAGE
 }
 

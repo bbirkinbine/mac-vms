@@ -35,10 +35,14 @@ build-windows:
 
 # Clone + boot throwaway VMs. ubuntu/kali run under Tart; `spawn windows`
 # delegates to the qemu fleet manager. Flags: -c <count>, -n <name>,
-# -i <pubkey>; Windows also takes --seed and --bridged.
+# -i <pubkey>; Windows also takes --seed, --bridged, --headless (VNC-only;
+# default shows a window), and --cpus N / --mem <qemu -m> / --disk-size <e.g.
+# 128G> to override the per-instance hardware (defaults 4 vCPU / 16384 MiB).
 #   just spawn ubuntu                # ubuntu-<N>
 #   just spawn kali -c 3             # kali-<N>, kali-<N+1>, kali-<N+2>
 #   just spawn windows -n devbox     # explicit name; no iteration
+#   just spawn windows --cpus 8 --mem 16G   # beefier box
+#   just spawn windows --headless    # no window; VNC display instead
 [doc('Clone + boot throwaway VMs: spawn <ubuntu|kali|windows> [-c N|-n name|-i key]')]
 spawn distro *FLAGS:
     @./scripts/spawn-vm.sh {{distro}} {{FLAGS}}
@@ -57,6 +61,8 @@ cleanup-vms distro *FLAGS:
 #   just spawn windows               # windows-<N>
 #   just spawn windows -c 3          # three at once
 #   just spawn windows -n devbox     # explicit name
+#   just spawn windows --cpus 8 --mem 16G --disk-size 128G   # override hardware
+#   just spawn windows --headless    # no window; serve VNC instead
 #   just spawn windows --seed packer/windows-11-arm64/seed/lab-seed.json
 [private]
 spawn-windows *FLAGS:

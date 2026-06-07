@@ -28,6 +28,9 @@
 #   ./scripts/spawn-windows.sh -i ~/.ssh/k.pub # explicit pubkey (repeatable)
 #   ./scripts/spawn-windows.sh --seed s.json   # base seed; hostname is overridden per instance
 #   sudo ./scripts/spawn-windows.sh --bridged  # per-VM IP on :22 (vmnet; needs root)
+#   ./scripts/spawn-windows.sh --cpus 8        # vCPUs per instance (default 4)
+#   ./scripts/spawn-windows.sh --mem 32G       # RAM per instance, qemu -m form (default 16384 MiB)
+#   ./scripts/spawn-windows.sh --disk-size 128G # grow each COW disk (qemu-img resize; needs in-Windows extend)
 #   ./scripts/spawn-windows.sh -h
 #
 # Teardown: scripts/cleanup-windows-vms.sh (or `just cleanup-windows-vms`).
@@ -48,8 +51,13 @@ EFI_CODE="/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 SSH_BASE=2222
 RDP_BASE=13389
 VNC_PORT_BASE=5950   # VNC display N => TCP 5900+N
+# Per-instance hardware. CPUS -> qemu -smp; MEM is passed straight to qemu -m
+# (a bare number is MiB, so 16384 == 16 GiB; "16G" also works). DISK_SIZE empty
+# means "inherit the base image's virtual size"; set it (e.g. 128G) to qemu-img
+# resize each COW overlay after creation — see the spawn_one note.
 CPUS=4
-MEM_MB=8192
+MEM=16384
+DISK_SIZE=""
 
 COUNT=1
 EXPLICIT_NAME=""
@@ -59,7 +67,7 @@ HEADLESS=false
 declare -a EXPLICIT_KEY_FLAGS=()
 
 usage() {
-  sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ---- argument parsing -------------------------------------------------------
@@ -90,6 +98,24 @@ while [[ $# -gt 0 ]]; do
     --seed=*) SEED_FILE="${1#--seed=}" ;;
     --bridged) BRIDGED=true ;;
     --headless) HEADLESS=true ;;
+    --cpus)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --cpus requires a number" >&2; exit 1; }
+      CPUS="$1"
+      ;;
+    --cpus=*) CPUS="${1#--cpus=}" ;;
+    --mem)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --mem requires a value" >&2; exit 1; }
+      MEM="$1"
+      ;;
+    --mem=*) MEM="${1#--mem=}" ;;
+    --disk-size)
+      shift
+      [[ $# -gt 0 ]] || { echo "ERROR: --disk-size requires a value (e.g. 128G)" >&2; exit 1; }
+      DISK_SIZE="$1"
+      ;;
+    --disk-size=*) DISK_SIZE="${1#--disk-size=}" ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 1 ;;
     *) echo "ERROR: unexpected argument: $1" >&2; usage >&2; exit 1 ;;
@@ -104,6 +130,18 @@ fi
 if [[ -n "$SEED_FILE" && ! -f "$SEED_FILE" ]]; then
   echo "ERROR: --seed file not found: $SEED_FILE" >&2
   exit 1
+fi
+# Hardware-spec validation. CPUS: positive int. MEM: digits + optional M/G
+# (qemu -m form). DISK_SIZE: qemu-img size, absolute (128G) or relative (+64G);
+# a unit is required so an unsuffixed number isn't mistaken for bytes.
+# qemu/qemu-img want a single-letter unit, so strip a trailing "B" first —
+# accept the natural "32GB"/"512MB" form and hand qemu "32G"/"512M".
+[[ "$CPUS" =~ ^[0-9]+$ && "$CPUS" -ge 1 ]] || { echo "ERROR: --cpus must be a positive integer (got '$CPUS')" >&2; exit 1; }
+MEM="${MEM%[Bb]}"
+[[ "$MEM" =~ ^[0-9]+[MGmg]?$ ]] || { echo "ERROR: --mem must be a qemu -m value, e.g. 8192, 16G, or 16GB (got '$MEM')" >&2; exit 1; }
+if [[ -n "$DISK_SIZE" ]]; then
+  DISK_SIZE="${DISK_SIZE%[Bb]}"
+  [[ "$DISK_SIZE" =~ ^\+?[0-9]+[MGTmgt]$ ]] || { echo "ERROR: --disk-size must carry a unit, e.g. 128G, 128GB, or +64G (got '$DISK_SIZE')" >&2; exit 1; }
 fi
 
 # ---- preconditions ----------------------------------------------------------
@@ -184,6 +222,13 @@ spawn_one() {
 
   # COW disk + NVRAM (base stays sysprep-fresh).
   qemu-img create -f qcow2 -b "$BASE_QCOW2" -F qcow2 "${dir}/disk.qcow2" >/dev/null
+  # Optional bigger disk: grow the OVERLAY (not the base — the base stays
+  # untouched and reusable). Windows still sees the extra space as unallocated;
+  # extend the partition in-guest (diskpart `extend`, or Disk Management).
+  if [[ -n "$DISK_SIZE" ]]; then
+    echo "==> [${name}] resizing COW disk (${DISK_SIZE}; extend the partition in-Windows)"
+    qemu-img resize "${dir}/disk.qcow2" "$DISK_SIZE" >/dev/null
+  fi
   cp "$BASE_EFIVARS" "${dir}/vars.fd"
 
   # Display: a window by default so you can watch first boot (which takes a
@@ -233,10 +278,14 @@ spawn_one() {
   else
     echo "==> [${name}] booting (${view}; SSH :${ssh_port}, RDP :${rdp_port})"
   fi
+  # Disk tuning on the main qcow2 (cache=writeback,aio=threads,discard=unmap):
+  # writeback lets the host page cache absorb writes (throughput win; fine for a
+  # throwaway clone); aio=threads is the macOS-supported AIO backend; discard=unmap
+  # lets the overlay reclaim space as Windows TRIMs. Not applied to the seed CD.
   nohup qemu-system-aarch64 \
     -name "winvm-${name}" \
     -machine virt,gic-version=max -accel hvf -cpu host \
-    -smp "$CPUS" -m "$MEM_MB" \
+    -smp "$CPUS" -m "$MEM" \
     -drive "if=pflash,format=raw,readonly=on,file=${EFI_CODE}" \
     -drive "if=pflash,format=raw,file=${dir}/vars.fd" \
     -chardev "socket,id=chrtpm,path=${sock}" \
@@ -244,7 +293,7 @@ spawn_one() {
     -device tpm-tis-device,tpmdev=tpm0 \
     -device ramfb \
     -device qemu-xhci,id=usb -device usb-kbd,bus=usb.0 -device usb-tablet,bus=usb.0 \
-    -drive "file=${dir}/disk.qcow2,if=virtio,format=qcow2" \
+    -drive "file=${dir}/disk.qcow2,if=virtio,format=qcow2,cache=writeback,aio=threads,discard=unmap" \
     -drive "file=${dir}/cidata.iso,media=cdrom,if=none,id=seedcd" \
     -device usb-storage,drive=seedcd,bus=usb.0 \
     -device "$NET_DEVICE" \

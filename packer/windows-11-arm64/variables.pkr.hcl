@@ -42,7 +42,7 @@ variable "cpu_count" {
 variable "memory_gb" {
   type        = number
   description = "RAM (in GiB) assigned to the build VM."
-  default     = 8
+  default     = 16
 }
 
 variable "disk_size_gb" {
